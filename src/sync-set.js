@@ -49,8 +49,8 @@ const TIER_SCORES = {
 }
 
 // 📖 Default limits — probe at most MAX_PROBES candidates, keep TARGET_COUNT in the set.
-const DEFAULT_MAX_PROBES = 30
-const DEFAULT_TARGET_COUNT = 4
+const DEFAULT_MAX_PROBES = 50
+const DEFAULT_TARGET_COUNT = 8
 const PROBE_TIMEOUT_MS = 40000
 
 // 📖 Models that are known to fail tool calls or produce broken output.

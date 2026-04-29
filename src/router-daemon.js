@@ -1257,6 +1257,15 @@ class RouterRuntime {
         return { done: false, failoverToNext: true, reason: `http_${response.status}` }
       }
 
+      // 📖 Provide failover fallback for non-retryable errors from the provider (like 400 Bad Request) 
+      // when they are caused by format idiosyncrasies (e.g. empty tools array that another model might accept)
+      if (response.status >= 400 && response.status < 500) {
+        this.recordRouterError(`http_${response.status}`, requestId, { model: key, status: response.status, body: text })
+        this.markFailure(key, `HTTP ${response.status}`)
+        this.addRequestLog({ request_id: requestId, model: key, status: response.status, latency_ms: latencyMs, tokens: 0, failover: attemptIndex > 0, error: `http_${response.status}` })
+        return { done: false, failoverToNext: true, reason: `http_${response.status}` }
+      }
+
       if (!res.writableEnded) {
         res.writeHead(response.status, {
           ...headerEntries(response.headers),
@@ -1337,6 +1346,17 @@ class RouterRuntime {
           this.addRequestLog({ request_id: requestId, model: key, status: response.status, latency_ms: latencyMs, tokens: 0, failover: attemptIndex > 0, error: `http_${response.status}`, stream: true })
           return { done: false, failoverToNext: true, reason: `http_${response.status}` }
         }
+        
+        // 📖 Provide failover fallback for non-retryable errors from the provider (like 400 Bad Request) 
+        // when they are caused by format idiosyncrasies (e.g. empty tools array that another model might accept)
+        if (response.status >= 400 && response.status < 500) {
+          const rawErr = await response.text()
+          this.recordRouterError(`http_${response.status}`, requestId, { model: key, status: response.status, body: rawErr, stream: true })
+          this.markFailure(key, `HTTP ${response.status}`)
+          this.addRequestLog({ request_id: requestId, model: key, status: response.status, latency_ms: latencyMs, tokens: 0, failover: attemptIndex > 0, error: `http_${response.status}`, stream: true })
+          return { done: false, failoverToNext: true, reason: `http_${response.status}` }
+        }
+
         if (!res.writableEnded) {
           res.writeHead(response.status, {
             ...headerEntries(response.headers),
