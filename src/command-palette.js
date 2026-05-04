@@ -145,7 +145,7 @@ const BASE_COMMAND_TREE = [
         label: 'Other filters',
         icon: '⚙️',
         children: [
-          { id: 'filter-configured-toggle', label: 'Toggle configured-only', shortcut: 'E', description: 'Show only configured providers', keywords: ['filter', 'configured', 'keys'] },
+          { id: 'filter-configured-toggle', label: 'Show only configured & working', shortcut: 'E', description: 'Show only configured providers that are responding (not noauth/auth error)', keywords: ['filter', 'configured', 'keys', 'working', 'active'] },
         ]
       },
     ]

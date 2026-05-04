@@ -2612,7 +2612,7 @@ export function createKeyHandler(ctx) {
       return
     }
 
-    // 📖 E toggles hiding models whose provider has no configured API key.
+    // 📖 E toggles "Show only configured & working models": hides models whose provider has no configured API key, or whose health status is noauth/auth_error (but keeps timeout and 429).
     // 📖 The preference is saved globally.
     if (key.name === 'e') {
       state.hideUnconfiguredModels = !state.hideUnconfiguredModels

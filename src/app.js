@@ -779,11 +779,14 @@ export async function runApp(cliArgs, config) {
       // 📖 they authenticate via their own CLI login flow, so "configured only" should never hide them.
       const providerMeta = PROVIDER_METADATA[r.providerKey]
       const noKeyNeeded = providerMeta?.cliOnly || providerMeta?.zenOnly
-      const unconfiguredHide = state.hideUnconfiguredModels && !noKeyNeeded && !getApiKey(state.config, r.providerKey)
-      if (unconfiguredHide) {
-        r.hidden = true
-        return
-      }
+// 📖 E toggles "Show only configured & working models":
+// 📖 hide models where provider has no key, or where the health status is noauth/auth_error (but keep timeout and 429)
+const badHealth = r.status === 'noauth' || r.status === 'auth_error'
+const unconfiguredHide = state.hideUnconfiguredModels && !noKeyNeeded && (!getApiKey(state.config, r.providerKey) || badHealth)
+if (unconfiguredHide) {
+  r.hidden = true
+  return
+}
       // 📖 Apply tier, origin, verdict, and health filters — model is hidden if it fails any
       const allowedTiers = (activeTier && TIER_LETTER_MAP[activeTier]) ? TIER_LETTER_MAP[activeTier] : [activeTier]
       const tierHide = activeTier !== null && !allowedTiers.includes(r.tier)

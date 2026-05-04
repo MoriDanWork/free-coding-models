@@ -373,7 +373,7 @@ export const sources = {
     models: cerebras,
   },
   googleai: {
-    name: 'Google AI Studio',
+    name: 'Google AI',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     models: googleai,
   },

@@ -778,7 +778,7 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       ? activeHotkey('D', ` Provider (${activeOriginLabel})`, PROVIDER_COLOR[[null, ...Object.keys(sources)][originFilterMode]] || [255, 255, 255])
       : hotkey('D', ' Provider')) +
     themeColors.dim(`  •  `) +
-    (hideUnconfiguredModels ? activeHotkey('E', ' Active only', configuredBadgeBg) : hotkey('E', ' Active only')) +
+    (hideUnconfiguredModels ? activeHotkey('E', ' Working only', configuredBadgeBg) : hotkey('E', ' Working only')) +
     themeColors.dim(`  •  `) +
     hotkey('P', ' Settings') +
     themeColors.dim(`  •  `) +
