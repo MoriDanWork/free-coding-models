@@ -801,7 +801,14 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
     lines.push(themeColors.dim(`  ... ${sorted.length - vp.endIdx} more below ...`))
   }
 
-   lines.push('')
+  // 📖 Blank lines to push footer to bottom of terminal
+  if (terminalRows > 0) {
+    const footerStartLine = lines.length + 1
+    const modelLines = footerStartLine - _firstModelLineIdx
+    const blankCount = Math.max(0, terminalRows - modelLines - 1)
+    for (let i = 0; i < blankCount; i++) lines.push('')
+  }
+
   // 📖 Footer hints keep only navigation and secondary actions now that the
   // 📖 active tool target is already visible in the header badge.
   const hotkey = (keyLabel, text) => themeColors.hotkey(keyLabel) + themeColors.dim(text)
@@ -822,15 +829,15 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   {
     const parts = [
       { text: '  ', key: null },
-      { text: 'F Toggle Favorite', key: 'f' },
+      { text: 'F Favorite', key: 'f' },
       { text: '  •  ', key: null },
-      { text: 'Y' + favoritesModeLabel, key: 'y' },
+      { text: 'Y Fav Mode', key: 'y' },
       { text: '  •  ', key: null },
       { text: tierFilterMode > 0 ? `T Tier (${activeTierLabel})` : 'T Tier', key: 't' },
       { text: '  •  ', key: null },
       { text: originFilterMode > 0 ? `D Provider (${activeOriginLabel})` : 'D Provider', key: 'd' },
       { text: '  •  ', key: null },
-      { text: 'E Show only configured models', key: 'e' },
+      { text: 'E Active only', key: 'e' },
       { text: '  •  ', key: null },
       { text: 'P Settings', key: 'p' },
       { text: '  •  ', key: null },
@@ -848,9 +855,9 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   if (!footerHidden) {
     // 📖 Full footer — all hint lines hidden when footerHidden=true to maximize table space
     lines.push(
-      '  ' + hotkey('F', ' Toggle Favorite') +
+      '  ' + hotkey('F', ' Favorite') +
       themeColors.dim(`  •  `) +
-      activeHotkey('Y', favoritesModeLabel, favoritesModeBg) +
+      activeHotkey('Y', 'Fav Mode', favoritesModeBg) +
       themeColors.dim(`  •  `) +
       (tierFilterMode > 0
         ? activeHotkey('T', ` Tier (${activeTierLabel})`, getTierRgb(activeTierLabel))
@@ -860,23 +867,20 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
         ? activeHotkey('D', ` Provider (${activeOriginLabel})`, PROVIDER_COLOR[[null, ...Object.keys(sources)][originFilterMode]] || [255, 255, 255])
         : hotkey('D', ' Provider')) +
       themeColors.dim(`  •  `) +
-      (hideUnconfiguredModels ? activeHotkey('E', ' Show only configured models', configuredBadgeBg) : hotkey('E', ' Show only configured models')) +
+      (hideUnconfiguredModels ? activeHotkey('E', ' Active only', configuredBadgeBg) : hotkey('E', ' Active only')) +
       themeColors.dim(`  •  `) +
       hotkey('P', ' Settings') +
       themeColors.dim(`  •  `) +
       themeColors.dim('Ctrl+H Help')
     )
 
-    // 📖 Line 2: command palette, recommend, feedback, theme
+    // 📖 Line 2: command palette + GitHub
     {
-      const cpText = ' CTRL+P ⚡️ Command Palette '
+      const cpText = ' Ctrl+P Cmd Palette '
       const parts = [
         { text: '  ', key: null },
         { text: cpText, key: 'ctrl+p' },
-        { text: '  •  ', key: null },
-        { text: 'Q Smart Recommend', key: 'q' },
-        { text: '  •  ', key: null },
-        { text: 'G Theme', key: 'g' },
+        { text: '  ', key: null },
       ]
       const footerRow2 = lines.length + 1
       let xPos = 1
@@ -887,23 +891,14 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
       }
     }
 
-    // 📖 Line 2: command palette (highlighted as new), recommend, feedback, and extended hints.
-    // 📖 CTRL+P ⚡️ Command Palette uses neon-green-on-dark-green background to highlight the feature.
-    const paletteLabel = chalk.bgRgb(0, 60, 0).rgb(57, 255, 20).bold(' CTRL+P ⚡️ Command Palette ')
+    // 📖 Line 2: command palette (highlighted as new) + GitHub link.
+    // 📖 Ctrl+P Cmd Palette uses neon-green-on-dark-green background to highlight the feature.
+    const paletteLabel = chalk.bgRgb(0, 60, 0).rgb(57, 255, 20).bold(' Ctrl+P Cmd Palette ')
+    const starLink = '⭐ ' + themeColors.link('\x1b]8;;https://github.com/vava-nessa/free-coding-models\x1b\\GitHub\x1b]8;;\x1b\\')
     lines.push(
-      '  ' + paletteLabel + themeColors.dim(`  •  `) +
-      hotkey('Q', ' Smart Recommend') + themeColors.dim(`  •  `) +
-      hotkey('G', ' Theme')
+      '  ' + paletteLabel + themeColors.dim(`  •  `) + starLink + themeColors.dim(`  •  `) +
+      themeColors.footerLove('Made with 💖 & ☕ by vava-nessa')
     )
-    // 📖 Slim credits line — Contributors / Buy me a coffee moved out of the
-    // 📖 footer to reduce visual noise. Discord, changelog and exit hints now
-    // 📖 live in the onboarding screen, Settings and the Help overlay.
-    const footerLine =
-      themeColors.footerLove('  Made with 💖 & ☕ by \x1b]8;;https://github.com/vava-nessa\x1b\\vava-nessa\x1b]8;;\x1b\\') +
-      themeColors.dim('  •  ') +
-      '⭐ ' +
-      themeColors.link('\x1b]8;;https://github.com/vava-nessa/free-coding-models\x1b\\Star on GitHub\x1b]8;;\x1b\\')
-    lines.push(footerLine)
 
     if (versionStatus.isOutdated) {
       const updateMsg = `  🚀⬆️ UPDATE AVAILABLE — v${LOCAL_VERSION} → v${versionStatus.latestVersion}  •  Click here or press Shift+U to update  🚀⬆️  `
@@ -1000,9 +995,6 @@ export function renderTable(results, pendingPings, frame, cursor = null, sortCol
   if (footerHidden) {
     // 📖 When footer is hidden, \x1b[J erases stale footer content below the cursor
     cleared.push('\x1b[J')
-  } else {
-    const remaining = terminalRows > 0 ? Math.max(0, terminalRows - cleared.length) : 0
-    for (let i = 0; i < remaining; i++) cleared.push(EL)
   }
   return cleared.join('\n')
 }

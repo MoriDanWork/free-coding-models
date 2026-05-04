@@ -116,7 +116,7 @@ import { checkForUpdateDetailed, checkForUpdate, runUpdate, promptUpdateNotifica
 import { promptApiKey } from '../src/setup.js'
 import { syncShellEnv, ensureShellRcSource, promptShellEnvMigration, removeShellEnv } from '../src/shell-env.js'
 import { stripAnsi, maskApiKey, displayWidth, padEndDisplay, tintOverlayLines, keepOverlayTargetVisible, sliceOverlayLines, calculateViewport, sortResultsWithPinnedFavorites, adjustScrollOffset } from '../src/render-helpers.js'
-import { renderTable, PROVIDER_COLOR } from '../src/render-table.js'
+import { renderTable, getLastLayout, PROVIDER_COLOR } from '../src/render-table.js'
 import { setOpenCodeModelData, startOpenCode, startOpenCodeDesktop, startOpenCodeWeb } from '../src/opencode.js'
 import { startKilo } from '../src/kilo.js'
 import { startOpenClaw } from '../src/openclaw.js'
@@ -1141,7 +1141,13 @@ export async function runApp(cliArgs, config) {
     // 📖 Router upgrade banner: inline notification for existing users not yet seen router
     if (!state.routerOnboardingOpen && !state.settingsOpen && !state.installEndpointsOpen && !state.toolInstallPromptOpen && !state.installedModelsOpen && !state.routerDashboardOpen && !state.tokenUsageOpen && !state.commandPaletteOpen && !state.recommendOpen && !state.helpVisible && !state.changelogOpen && !state.incompatibleFallbackOpen) {
       const banner = overlays.renderRouterUpgradeBanner()
-      if (banner) tableContent = banner + '\n' + tableContent
+      if (banner) {
+        tableContent = banner + '\n' + tableContent
+        const layout = getLastLayout()
+        layout.headerRow++
+        if (layout.firstModelRow > 0) layout.firstModelRow++
+        if (layout.lastModelRow > 0) layout.lastModelRow++
+      }
     }
 
     const content = state.settingsOpen
