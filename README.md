@@ -2,8 +2,8 @@
   <img src="https://img.shields.io/npm/v/free-coding-models?color=76b900&label=npm&logo=npm" alt="npm version">
   <img src="https://img.shields.io/node/v/free-coding-models?color=76b900&logo=node.js" alt="node version">
   <img src="https://img.shields.io/npm/l/free-coding-models?color=76b900" alt="license">
-  <img src="https://img.shields.io/badge/models-172-76b900?logo=nvidia" alt="models count">
-  <img src="https://img.shields.io/badge/providers-15-blue" alt="providers count">
+  <img src="https://img.shields.io/badge/models-180-76b900?logo=nvidia" alt="models count">
+  <img src="https://img.shields.io/badge/providers-16-blue" alt="providers count">
   <br>
   <img src="https://img.shields.io/badge/dependencies-1-76b900?logo=npm" alt="1 dependency">
   <img src="https://img.shields.io/badge/provenance-sigstore-blueviolet?logo=signstore" alt="npm provenance">
@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Find the fastest free coding model in seconds</strong><br>
-  <sub>Track 172 models across 15 vetted free or free-limited AI providers in real time</sub><br>  <sub> Install Free API endpoints to your favorite AI coding tool: <br>📦 OpenCode, 📦 OpenCode Desktop, 📦 OpenCode WebUI, 🦞 OpenClaw, 💘 Crush, 🪿 Goose, 🛠 Aider, ⚡️ Kilo CLI, 🐉 Qwen Code, 🤲 OpenHands, ⚡ Amp, 🔮 Hermes, ▶️ Continue, 🧠 Cline, 🛠️ Xcode, π Pi, 🦘 Rovo or ♊ Gemini in one keystroke</sub>
+  <sub>Track 180 models across 16 vetted free or free-limited AI providers in real time</sub><br>  <sub> Install Free API endpoints to your favorite AI coding tool: <br>📦 OpenCode, 📦 OpenCode Desktop, 📦 OpenCode WebUI, 🦞 OpenClaw, 💘 Crush, 🪿 Goose, 🛠 Aider, ⚡️ Kilo CLI, 🐉 Qwen Code, 🤲 OpenHands, ⚡ Amp, 🔮 Hermes, ▶️ Continue, 🧠 Cline, 🛠️ Xcode, π Pi, 🦘 Rovo or ♊ Gemini in one keystroke</sub>
 </p>
 
 
@@ -60,7 +60,7 @@ create a free account on one of the [providers](#-list-of-free-ai-providers)
 
 ## 💡 Why this tool?
 
-There are **172 cataloged free or free-limited coding models** across 15 vetted providers. Which one is fastest right now? Which one is actually stable versus just lucky on the last ping?
+There are **180 cataloged free or free-limited coding models** across 16 vetted providers. Which one is fastest right now? Which one is actually stable versus just lucky on the last ping?
 
 This CLI pings them all in parallel, shows live latency, and calculates a **live Stability Score (0-100)**. Average latency alone is misleading if a model randomly spikes to 6 seconds; the stability score measures true reliability by combining **p95 latency** (30%), **jitter/variance** (30%), **spike rate** (20%), and **uptime** (20%). 
 
@@ -74,7 +74,7 @@ It then writes the model you pick directly into your coding tool's config — so
 
 Create a free account on one provider below to get started:
 
-**172 coding models** across 15 active providers, ranked by practical free-tier usefulness.
+**180 coding models** across 16 active providers, ranked by practical free-tier usefulness.
 
 | # | Provider | Models | Tier range | Free tier | Env var |
 |---|----------|--------|-----------|-----------|--------|
@@ -83,16 +83,17 @@ Create a free account on one provider below to get started:
 | 3 | [Cerebras](https://cloud.cerebras.ai) | 4 | S+ → B | 30 RPM, 1M tokens/day (no credit card) | `CEREBRAS_API_KEY` |
 | 4 | [Google AI Studio](https://aistudio.google.com/apikey) | 6 | S+ → A | Gemini free quotas vary by model/region | `GOOGLE_API_KEY` |
 | 5 | [GitHub Models](https://models.github.ai) | 15 | S+ → C | Quota depends on GitHub/Copilot tier | `GITHUB_TOKEN` |
-| 6 | [Cloudflare Workers AI](https://dash.cloudflare.com) | 15 | S+ → B | 10K neurons/day, 300 RPM (no credit card) | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
-| 7 | [OpenRouter](https://openrouter.ai/keys) | 30 | S+ → C | 50 req/day free, 1K/day with $10 spend | `OPENROUTER_API_KEY` |
-| 8 | [SambaNova](https://cloud.sambanova.ai/apis) | 6 | S+ → A- | Small developer quota, useful for light usage | `SAMBANOVA_API_KEY` |
-| 9 | [OVHcloud AI Endpoints](https://endpoints.ai.cloud.ovh.net) | 10 | S → B | 2 req/min/IP free, 400 RPM with key | `OVH_AI_ENDPOINTS_ACCESS_TOKEN` |
-| 10 | [Codestral / Mistral](https://console.mistral.ai/api-keys) | 1 | B+ | 30 RPM, 2K req/day | `MISTRAL_API_KEY` |
-| 11 | [ZAI](https://z.ai) | 2 | S | Free Flash models only | `ZAI_API_KEY` |
-| 12 | [Scaleway](https://console.scaleway.com/iam/api-keys) | 10 | S+ → B | 1M free tokens | `SCALEWAY_API_KEY` |
-| 13 | [Alibaba DashScope](https://modelstudio.console.alibabacloud.com) | 9 | S+ → A | 1M free tokens/model, Singapore, 90 days | `DASHSCOPE_API_KEY` |
-| 14 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | 6 | S+ → A | 1,000 req/day with personal Google account | CLI tool ♊ |
-| 15 | [OpenCode Zen](https://opencode.ai/zen) | 8 | S+ → A | Free with OpenCode account | Zen models ✨ |
+| 6 | [Mistral La Plateforme](https://console.mistral.ai/api-keys) | 7 | S+ → A | Experiment plan, free evaluation tier | `MISTRAL_API_KEY` |
+| 7 | [Cloudflare Workers AI](https://dash.cloudflare.com) | 15 | S+ → B | 10K neurons/day, 300 RPM (no credit card) | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| 8 | [OpenRouter](https://openrouter.ai/keys) | 31 | S+ → C | 50 req/day free, 1K/day with $10 spend | `OPENROUTER_API_KEY` |
+| 9 | [SambaNova](https://cloud.sambanova.ai/apis) | 6 | S+ → A- | Small developer quota, useful for light usage | `SAMBANOVA_API_KEY` |
+| 10 | [OVHcloud AI Endpoints](https://endpoints.ai.cloud.ovh.net) | 10 | S → B | 2 req/min/IP free, 400 RPM with key | `OVH_AI_ENDPOINTS_ACCESS_TOKEN` |
+| 11 | [Codestral](https://console.mistral.ai/api-keys) | 1 | B+ | 30 RPM, 2K req/day | `MISTRAL_API_KEY` |
+| 12 | [ZAI](https://z.ai) | 2 | S | Free Flash models only | `ZAI_API_KEY` |
+| 13 | [Scaleway](https://console.scaleway.com/iam/api-keys) | 10 | S+ → B | 1M free tokens | `SCALEWAY_API_KEY` |
+| 14 | [Alibaba DashScope](https://modelstudio.console.alibabacloud.com) | 9 | S+ → A | 1M free tokens/model, Singapore, 90 days | `DASHSCOPE_API_KEY` |
+| 15 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | 6 | S+ → A | 1,000 req/day with personal Google account | CLI tool ♊ |
+| 16 | [OpenCode Zen](https://opencode.ai/zen) | 8 | S+ → A | Free with OpenCode account | Zen models ✨ |
 
 > 💡 One key is enough. Add more at any time with **`P`** inside the TUI.
 
@@ -380,7 +381,7 @@ When a tool mode is active (via `Z`), models incompatible with that tool are hig
 
 ## ✨ Features
 
-- **Parallel pings** — all 166 API/Zen-callable models tested simultaneously via native `fetch` (172 total cataloged models including CLI-only Gemini rows)
+- **Parallel pings** — all 174 API/Zen-callable models tested simultaneously via native `fetch` (180 total cataloged models including CLI-only Gemini rows)
 - **Adaptive monitoring** — 2s burst for 60s → 10s normal → 30s idle
 - **Stability score** — composite 0–100 (p95 latency, jitter, spike rate, uptime)
 - **Smart ranking** — top 3 highlighted 🥇🥈🥉
@@ -419,7 +420,7 @@ We welcome contributions — issues, PRs, new provider integrations.
 
 ## ⚖️ Model Licensing & Commercial Use
 
-**Short answer:** The 172 cataloged models are API/CLI-served models where generated-output ownership is generally granted by the provider/model terms. Always verify current provider terms for high-stakes commercial use.
+**Short answer:** The 180 cataloged models are API/CLI-served models where generated-output ownership is generally granted by the provider/model terms. Always verify current provider terms for high-stakes commercial use.
 
 ### Output Ownership
 
@@ -526,13 +527,7 @@ MIT © [vava](https://github.com/vava-nessa)
 
 <p align="center">
   <strong>Contributors</strong><br>
-  <a href="https://github.com/vava-nessa"><img src="https://avatars.githubusercontent.com/u/5466264?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="vava-nessa"></a>
-  <a href="https://github.com/erwinh22"><img src="https://avatars.githubusercontent.com/u/6641858?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="erwinh22"></a>
-  <a href="https://github.com/whit3rabbit"><img src="https://avatars.githubusercontent.com/u/12357518?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="whit3rabbit"></a>
-  <a href="https://github.com/skylaweber"><img src="https://avatars.githubusercontent.com/u/172871734?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="skylaweber"></a>
-  <a href="https://github.com/PhucTruong-ctrl"><img src="https://github.com/PhucTruong-ctrl.png?s=60" width="60" height="60" style="border-radius:50%" alt="PhucTruong-ctrl"></a>
-  <a href="https://github.com/chindris-mihai-alexandru"><img src="https://avatars.githubusercontent.com/u/12643176?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="chindris-mihai-alexandru"></a>
-  <a href="https://github.com/serajbaltu"><img src="https://avatars.githubusercontent.com/u/90699173?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="serajbaltu"></a>
+  <a href="https://github.com/vava-nessa"><img src="https://avatars.githubusercontent.com/u/5466264?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="vava-nessa"></a><a href="https://github.com/erwinh22"><img src="https://avatars.githubusercontent.com/u/6641858?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="erwinh22"></a><a href="https://github.com/whit3rabbit"><img src="https://avatars.githubusercontent.com/u/12357518?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="whit3rabbit"></a><a href="https://github.com/skylaweber"><img src="https://avatars.githubusercontent.com/u/172871734?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="skylaweber"></a><a href="https://github.com/PhucTruong-ctrl"><img src="https://github.com/PhucTruong-ctrl.png?s=60" width="60" height="60" style="border-radius:50%" alt="PhucTruong-ctrl"></a><a href="https://github.com/chindris-mihai-alexandru"><img src="https://avatars.githubusercontent.com/u/12643176?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="chindris-mihai-alexandru"></a><a href="https://github.com/serajbaltu"><img src="https://avatars.githubusercontent.com/u/90699173?v=4&s=60" width="60" height="60" style="border-radius:50%" alt="serajbaltu"></a>
   <br>
   <sub>
     <a href="https://github.com/vava-nessa">vava-nessa</a> &middot;
