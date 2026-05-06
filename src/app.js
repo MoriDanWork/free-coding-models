@@ -776,33 +776,35 @@ export async function runApp(cliArgs, config) {
     const activeVerdict = VERDICT_CYCLE[state.verdictFilterMode]
     const activeHealth = HEALTH_CYCLE[state.healthFilterMode]
     state.results.forEach(r => {
-      // 📖 Sticky-favorites mode keeps favorites visible regardless of configured-only, tier, or provider filters.
-      if (state.favoritesPinnedAndSticky && r.isFavorite) {
-        r.hidden = false
-        return
-      }
+      const stickyFavorite = state.favoritesPinnedAndSticky && r.isFavorite
       // 📖 CLI-only tools (rovo, gemini) and Zen models don't need traditional API keys —
       // 📖 they authenticate via their own CLI login flow, so "configured only" should never hide them.
       const providerMeta = PROVIDER_METADATA[r.providerKey]
       const noKeyNeeded = providerMeta?.cliOnly || providerMeta?.zenOnly
-// 📖 E toggles "Show only configured & working models":
-// 📖 hide models where provider has no key, or where the health status is noauth/auth_error (but keep timeout and 429)
-const badHealth = r.status === 'noauth' || r.status === 'auth_error'
-const unconfiguredHide = state.hideUnconfiguredModels && !noKeyNeeded && (!getApiKey(state.config, r.providerKey) || badHealth)
-if (unconfiguredHide) {
-  r.hidden = true
-  return
-}
-// 📖 Usable only: only show models with Health UP and Verdict Perfect/Normal/Slow
-if (state.bestModeOnly) {
-  const bmVerdict = getVerdict(r)
-  const bmVerdictOk = ['Perfect', 'Normal', 'Slow'].includes(bmVerdict)
-  const bmHealthOk = r.status === 'up'
-  if (!bmHealthOk || !bmVerdictOk) {
-    r.hidden = true
-    return
-  }
-}
+      // 📖 E toggles "Show only configured & working models":
+      // 📖 hide models where provider has no key, or where the health status is noauth/auth_error (but keep timeout and 429)
+      const badHealth = r.status === 'noauth' || r.status === 'auth_error'
+      const unconfiguredHide = state.hideUnconfiguredModels && !noKeyNeeded && (!getApiKey(state.config, r.providerKey) || badHealth)
+      if (unconfiguredHide) {
+        r.hidden = true
+        return
+      }
+      // 📖 Usable only: only show models with Health UP and Verdict Perfect/Normal/Slow
+      if (state.bestModeOnly) {
+        const bmVerdict = getVerdict(r)
+        const bmVerdictOk = ['Perfect', 'Normal', 'Slow'].includes(bmVerdict)
+        const bmHealthOk = r.status === 'up'
+        if (!bmHealthOk || !bmVerdictOk) {
+          r.hidden = true
+          return
+        }
+      }
+      // 📖 Sticky-favorites mode keeps usable favorites visible regardless of
+      // 📖 tier/provider/text filters, but "Usable only" health still wins above.
+      if (stickyFavorite) {
+        r.hidden = false
+        return
+      }
       // 📖 Apply tier, origin, verdict, and health filters — model is hidden if it fails any
       const allowedTiers = (activeTier && TIER_LETTER_MAP[activeTier]) ? TIER_LETTER_MAP[activeTier] : [activeTier]
       const tierHide = activeTier !== null && !allowedTiers.includes(r.tier)
@@ -1057,12 +1059,17 @@ if (state.bestModeOnly) {
     try {
     refreshAutoPingMode()
     state.frame++
+    // 📖 Re-apply live health filters each frame so "Usable only" truly means
+    // 📖 usable right now: models enter/leave as soon as ping status changes.
+    applyTierFilter()
     // 📖 Cache visible+sorted models each frame so Enter handler always matches the display
     if (!state.settingsOpen && !state.installEndpointsOpen && !state.toolInstallPromptOpen && !state.incompatibleFallbackOpen && !state.recommendOpen && !state.changelogOpen && !state.installedModelsOpen && !state.routerDashboardOpen && !state.commandPaletteOpen) {
       const visible = state.results.filter(r => !r.hidden)
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
         pinFavorites: state.favoritesPinnedAndSticky,
       })
+      if (state.cursor >= state.visibleSorted.length) state.cursor = Math.max(0, state.visibleSorted.length - 1)
+      adjustScrollOffset(state)
     }
     const tableTerminalRows = state.terminalRows
 

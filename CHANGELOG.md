@@ -1,10 +1,10 @@
-## [0.3.64] - 2026-05-06
+## [0.3.65] - 2026-05-06
 
 ### Fixed
 
-- **E footer spacing and color** — Fixed the active `E` footer label so the hotkey letter keeps its distinct hotkey color and is separated from the active filter text by a readable space. This makes the active filter state easier to scan in the TUI footer.
+- **Live Usable only filtering** — `Usable only` now refreshes continuously while pings run, so models enter the table as soon as they become usable and leave the table as soon as they stop being usable. The filter now reflects the current `UP` state and usable verdicts instead of staying stuck on the state from when the filter was toggled.
+- **Sticky favorites no longer bypass Usable only health** — Favorites can still stay visible across tier, provider, and text filters when sticky favorites mode is enabled, but `Usable only` now takes precedence. A favorite that times out, goes down, hits auth errors, or otherwise stops being usable is removed from the view like any other model.
 
 ### Changed
 
-- **Clearer E filter names** — Renamed the `E` cycle from `Working only` / `Best mode` to `Configured only` / `Usable only`. The behavior is unchanged: `Configured only` keeps configured providers visible, while `Usable only` narrows the table to models with healthy status and usable verdicts.
-- **README TUI key reference** — Updated the `E` shortcut documentation to describe the full visibility cycle: `Active only → Configured only → Usable only`.
+- **Safer cursor behavior during live filtering** — When live filtering removes the selected row, the TUI now clamps the cursor and scroll offset to the remaining visible rows so selection and launch behavior keep matching what is on screen.
