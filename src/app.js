@@ -112,7 +112,7 @@ import { runFiableMode, filterByTierOrExit, fetchOpenRouterFreeModels } from '..
 import { PROVIDER_METADATA, ENV_VAR_NAMES, isWindows, isMac } from '../src/provider-metadata.js'
 import { parseTelemetryEnv, isTelemetryDebugEnabled, telemetryDebug, ensureTelemetryConfig, getTelemetryDistinctId, getTelemetrySystem, getTelemetryTerminal, isTelemetryEnabled, sendUsageTelemetry } from '../src/telemetry.js'
 import { ensureFavoritesConfig, toFavoriteKey, syncFavoriteFlags, toggleFavoriteModel, reorderFavorite, pruneOrphanedFavorites } from '../src/favorites.js'
-import { checkForUpdateDetailed, checkForUpdate, runUpdate, promptUpdateNotification, fetchLastReleaseDate } from './updater.js'
+import { checkForUpdateDetailed, checkForUpdate, runUpdate, fetchLastReleaseDate } from './updater.js'
 import { promptApiKey } from '../src/setup.js'
 import { syncShellEnv, ensureShellRcSource, promptShellEnvMigration, removeShellEnv } from '../src/shell-env.js'
 import { stripAnsi, maskApiKey, displayWidth, padEndDisplay, tintOverlayLines, keepOverlayTargetVisible, sliceOverlayLines, calculateViewport, sortResultsWithPinnedFavorites, adjustScrollOffset } from '../src/render-helpers.js'
@@ -315,27 +315,12 @@ export async function runApp(cliArgs, config) {
     saveConfig(config)
   }
 
-  // 📖 Show interactive update prompt if a new version is available (skip in dev mode)
+  // 📖 Auto-update: if a new version is available, install it immediately (skip in dev mode)
+  // 📖 runUpdate() will relaunch the process with the new version after install completes
   if (latestVersion && !isDevMode) {
-    const choice = await promptUpdateNotification(latestVersion)
-    if (choice === 'update') {
-      runUpdate(latestVersion)
-      return // 📖 runUpdate relaunches the process — this line is a safety guard
-    } else if (choice === 'changelogs') {
-      const { execSync: _exec } = await import('child_process')
-      const url = 'https://github.com/vava-nessa/free-coding-models/releases'
-      try {
-        if (process.platform === 'darwin') _exec(`open ${url}`)
-        else if (process.platform === 'linux') _exec(`xdg-open ${url}`)
-        else console.log(chalk.dim(`  📋 ${url}`))
-      } catch { console.log(chalk.dim(`  📋 ${url}`)) }
-      // 📖 After opening changelogs, re-prompt so user can still update or continue
-      const choice2 = await promptUpdateNotification(latestVersion)
-      if (choice2 === 'update') {
-        runUpdate(latestVersion)
-        return
-      }
-    }
+    console.log(chalk.dim(`  ⬆ New version v${latestVersion} detected, updating...`))
+    runUpdate(latestVersion)
+    return // 📖 runUpdate relaunches the process — this line is a safety guard
   }
 
   // 📖 Dynamic OpenRouter free model discovery — fetch live free models from API

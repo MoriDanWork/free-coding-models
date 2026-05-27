@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { id: 'dashboard', icon: '▤', label: 'Dashboard' },
   { id: 'settings', icon: '⚙', label: 'Settings' },
   { id: 'analytics', icon: '▌▌', label: 'Analytics' },
+  { id: 'map', icon: '🌍', label: 'Map' },
 ]
 
 export default function Sidebar({ currentView, onNavigate, onToggleTheme }) {

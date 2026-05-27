@@ -20,6 +20,7 @@ import DetailPanel from './components/dashboard/DetailPanel.jsx'
 import ExportModal from './components/dashboard/ExportModal.jsx'
 import SettingsView from './components/settings/SettingsView.jsx'
 import AnalyticsView from './components/analytics/AnalyticsView.jsx'
+import MapView from './components/map/MapView.jsx'
 import ToastContainer from './components/atoms/ToastContainer.jsx'
 
 let toastIdCounter = 0
@@ -125,6 +126,12 @@ export default function App() {
         {currentView === 'analytics' && (
           <div className="view">
             <AnalyticsView models={models} />
+          </div>
+        )}
+
+        {currentView === 'map' && (
+          <div className="view">
+            <MapView />
           </div>
         )}
 
