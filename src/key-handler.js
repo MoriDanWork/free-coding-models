@@ -3084,6 +3084,9 @@ export function createMouseEventHandler(ctx) {
       state.sortColumn = col
       state.sortDirection = 'asc'
     }
+    // 📖 Trigger header flash animation (3 frames ≈ 250ms at 12 FPS)
+    state.headerFlashColumn = col
+    state.headerFlashUntilFrame = state.frame + 3
     // 📖 Recompute visible sorted list to reflect new sort order
     const visible = state.results.filter(r => !r.hidden)
     state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
@@ -3422,6 +3425,8 @@ export function createMouseEventHandler(ctx) {
           persistUiSettings()
         } else if (col.name === 'tier') {
           // 📖 Clicking the Tier header cycles the tier filter (same as T key)
+          state.headerFlashColumn = 'tier'
+          state.headerFlashUntilFrame = state.frame + 3
           state.tierFilterMode = (state.tierFilterMode + 1) % TIER_CYCLE.length
           applyTierFilter()
           const visible = state.results.filter(r => !r.hidden)

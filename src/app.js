@@ -792,6 +792,11 @@ export async function runApp(cliArgs, config) {
     const tableTerminalRows = state.terminalRows
 
     let tableContent = null
+    // 📖 Clear expired header flash animation
+    if (state.headerFlashColumn && state.frame >= state.headerFlashUntilFrame) {
+      state.headerFlashColumn = null
+    }
+
     // 📖 Build renderTable options once per frame — keeps all call sites in sync
     const tableOpts = {
       results: state.results,
@@ -825,6 +830,7 @@ export async function runApp(cliArgs, config) {
       bestModeOnly: state.bestModeOnly,
       benchmarkResults: state.benchmarkResults,
       benchmarkRunning: state.benchmarkRunning,
+      headerFlashColumn: state.headerFlashColumn,
     }
     if (state.commandPaletteOpen) {
       if (!state.commandPaletteFrozenTable) {

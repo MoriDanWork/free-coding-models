@@ -199,7 +199,7 @@ const TIER_PALETTES = {
   },
 }
 
-function currentPalette() {
+export function currentPalette() {
   return PALETTES[activeTheme] ?? PALETTES.dark
 }
 

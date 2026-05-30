@@ -45,7 +45,7 @@ import {
   TABLE_FOOTER_LINES,
   FRAMES
 } from './constants.js'
-import { themeColors, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme } from './theme.js'
+import { themeColors, currentPalette, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme } from './theme.js'
 import { TIER_COLOR } from './tier-colors.js'
 import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo } from './utils.js'
 import { usagePlaceholderForProvider } from './ping.js'
@@ -186,7 +186,8 @@ export function renderTable({
   routerFooterRequests = 0,
   benchmarkResults = {},
   benchmarkRunning = new Set(),
-} = {}) {
+  headerFlashColumn = null,
+} = _) {
   // 📖 Filter out hidden models for display
   const visibleResults = results.filter(r => !r.hidden)
 
@@ -418,24 +419,19 @@ export function renderTable({
   // 📖 Solution: build plain text first, then colorize
   const dir = sortDirection === 'asc' ? '↑' : '↓'
 
-  const rankH    = 'Rank'
-  const tierH    = 'Tier'
-  const originH  = 'Provider'
-  const modelH   = 'Model'
-  const sweH     = sortColumn === 'swe' ? (dir + 'SWE%') : 'SWE%'
-  const ctxH     = sortColumn === 'ctx' ? (dir + 'CTX') : 'CTX'
-  // 📖 Compact labels: 'Lat. P' / 'Avg. P' / 'StaB.' to save horizontal space
-  const pingLabel = isCompact ? 'Lat. P' : 'Latest Ping'
-  const avgLabel  = isCompact ? 'Avg. P' : 'Avg Ping'
-  const stabLabel = isCompact ? 'StaB.' : 'Stability'
-  const pingH    = sortColumn === 'ping' ? dir + ' ' + pingLabel : pingLabel
-  const avgH     = sortColumn === 'avg' ? dir + ' ' + avgLabel : avgLabel
-  const healthH  = sortColumn === 'condition' ? dir + ' Health' : 'Health'
-  const verdictH = sortColumn === 'verdict' ? dir + ' Verdict' : 'Verdict'
-  // 📖 Stability: in non-compact the arrow eats 2 chars ('↑ '), so truncate to fit wStab.
-  // 📖 Compact is fine because '↑ StaB.' (7) < wStab (8).
-  const stabH    = sortColumn === 'stability' ? (dir + (isCompact ? ' ' + stabLabel : 'Stability')) : stabLabel
-  const uptimeH  = sortColumn === 'uptime' ? (dir + 'Up%') : 'Up%'
+  // 📖 Plain header labels — arrows are appended dynamically below.
+  const rankLabel    = 'Rank'
+  const tierLabel    = 'Tier'
+  const originLabel  = isCompact ? 'PrOD…' : 'Provider'
+  const modelLabel   = 'Model'
+  const sweLabel     = 'SWE%'
+  const ctxLabel     = 'CTX'
+  const pingLabel    = isCompact ? 'Lat. P' : 'Latest Ping'
+  const avgLabel     = isCompact ? 'Avg. P' : 'Avg Ping'
+  const healthLabel  = 'Health'
+  const verdictLabel = 'Verdict'
+  const stabLabel    = isCompact ? 'StaB.' : 'Stability'
+  const uptimeLabel  = 'Up%'
 
   // 📖 Helper to colorize first letter for keyboard shortcuts
   // 📖 IMPORTANT: Pad PLAIN TEXT first, then apply colors to avoid alignment issues
@@ -447,40 +443,89 @@ export function renderTable({
     return colorFn(first) + themeColors.dim(rest + padding)
   }
 
-  // 📖 Now colorize after padding is calculated on plain text
-  const rankH_c    = colorFirst(rankH, W_RANK)
-  const tierH_c    = colorFirst('Tier', W_TIER)
-  const originLabel = isCompact ? 'PrOD…' : 'Provider'
-  const originH_c  = sortColumn === 'origin'
-    ? themeColors.accentBold(originLabel.padEnd(wSource))
-    : (originFilterMode > 0 ? themeColors.accentBold(originLabel.padEnd(wSource)) : (() => {
-      // 📖 Provider keeps O for sorting and D for provider-filter cycling.
-      // 📖 In compact mode, shorten to 'PrOD…' (4 chars + ellipsis) to save space.
-      const plain = isCompact ? 'PrOD…' : 'PrOviDer'
-      const padding = ' '.repeat(Math.max(0, wSource - plain.length))
-      if (isCompact) {
-        return themeColors.dim('Pr') + themeColors.hotkey('O') + themeColors.hotkey('D') + themeColors.dim('…' + padding)
-      }
-      return themeColors.dim('Pr') + themeColors.hotkey('O') + themeColors.dim('vi') + themeColors.hotkey('D') + themeColors.dim('er' + padding)
-    })())
-  const modelH_c   = colorFirst(modelH, W_MODEL)
-  const sweH_c     = sortColumn === 'swe' ? themeColors.accentBold(sweH.padEnd(W_SWE)) : colorFirst(sweH, W_SWE)
-  const ctxH_c     = sortColumn === 'ctx' ? themeColors.accentBold(ctxH.padEnd(W_CTX)) : colorFirst(ctxH, W_CTX)
-  const pingH_c    = sortColumn === 'ping' ? themeColors.accentBold(pingH.padEnd(wPing)) : colorFirst(pingLabel, wPing)
-  const avgH_c     = sortColumn === 'avg' ? themeColors.accentBold(avgH.padEnd(wAvg)) : colorFirst(avgLabel, wAvg)
-  const healthH_c  = sortColumn === 'condition' ? themeColors.accentBold(healthH.padEnd(wStatus)) : colorFirst('Health', wStatus)
-  const verdictH_c = sortColumn === 'verdict' ? themeColors.accentBold(verdictH.padEnd(W_VERDICT)) : colorFirst(verdictH, W_VERDICT)
-  // 📖 Custom colorization for Stability: highlight 'B' (the sort key) since 'S' is taken by SWE
-  const stabH_c    = sortColumn === 'stability' ? themeColors.accentBold(stabH.padEnd(wStab)) : (() => {
+  // 📖 Flash animation: when a column header is clicked, it briefly renders with
+  // 📖 a vivid inverse style (bright accent bg + white bold fg) for ~250ms.
+  // 📖 This gives satisfying visual feedback that the click was registered.
+  const flashHeader = (plainText, width) => {
+    const padded = plainText.length <= width ? plainText.padEnd(width) : plainText.slice(0, width)
+    const [r, g, b] = currentPalette().accentStrong
+    return chalk.bold.rgb(255, 255, 255).bgRgb(r, g, b)(padded)
+  }
+
+  // 📖 Sort-active header: renders the column header with a subtle background color
+  // 📖 to visually indicate which column is currently sorted.
+  // 📖 Includes the ↑/↓ arrow and bold white text on a tinted background.
+  // 📖 If the arrow prefix doesn't fit, appends it: 'SWE↑' instead of '↑ SWE%'.
+  const sortActiveHeader = (label, width) => {
+    const arrow = dir
+    const prefixed = arrow + ' ' + label
+    const text = prefixed.length <= width ? prefixed : label + arrow
+    const padded = text.padEnd(width).slice(0, width)
+    // 📖 Subtle dark accent background — visible but not overwhelming.
+    const bg = currentPalette().cursor.defaultBg
+    return chalk.bold.rgb(255, 255, 255).bgRgb(...bg)(padded)
+  }
+
+  // 📖 Now colorize each column header.
+  // 📖 Three rendering states per column:
+  // 📖   1. FLASH  — headerFlashColumn matches → vivid inverse style (click feedback)
+  // 📖   2. ACTIVE — sortColumn matches → subtle bg + ↑/↓ arrow
+  // 📖   3. DEFAULT — normal dim text with highlighted first letter
+
+  // 📖 Helper: pick the right style for a standard column header.
+  // 📖 colKey = sort key (e.g. 'rank', 'swe'), label = plain text, width = column width.
+  const headerStyle = (colKey, label, width) => {
+    const arrowText = dir + ' ' + label
+    const flashText = arrowText.length <= width ? arrowText : label + dir
+    if (headerFlashColumn === colKey) return flashHeader(flashText, width)
+    if (sortColumn === colKey) return sortActiveHeader(label, width)
+    return colorFirst(label, width)
+  }
+
+  const rankH_c    = headerStyle('rank', rankLabel, W_RANK)
+  const tierH_c    = (() => {
+    if (headerFlashColumn === 'tier') return flashHeader(tierLabel, W_TIER)
+    return colorFirst(tierLabel, W_TIER)
+  })()
+  const modelH_c   = headerStyle('model', modelLabel, W_MODEL)
+  const sweH_c     = headerStyle('swe', sweLabel, W_SWE)
+  const ctxH_c     = headerStyle('ctx', ctxLabel, W_CTX)
+  const pingH_c    = headerStyle('ping', pingLabel, wPing)
+  const avgH_c     = headerStyle('avg', avgLabel, wAvg)
+  const healthH_c  = headerStyle('condition', healthLabel, wStatus)
+  const verdictH_c = headerStyle('verdict', verdictLabel, W_VERDICT)
+  const stabH_c    = (() => {
+    if (headerFlashColumn === 'stability') {
+      const ft = (dir + ' ' + stabLabel).length <= wStab ? dir + ' ' + stabLabel : stabLabel + dir
+      return flashHeader(ft, wStab)
+    }
+    if (sortColumn === 'stability') return sortActiveHeader(stabLabel, wStab)
     const plain = stabLabel
     const padding = ' '.repeat(Math.max(0, wStab - plain.length))
     return themeColors.dim('Sta') + themeColors.hotkey('B') + themeColors.dim((isCompact ? '.' : 'ility') + padding)
   })()
-  // 📖 Up% sorts on U, so keep the highlighted shortcut in the shared yellow sort-key color.
-  const uptimeH_c  = sortColumn === 'uptime' ? themeColors.accentBold(uptimeH.padEnd(W_UPTIME)) : (() => {
-    const plain = 'Up%'
-    const padding = ' '.repeat(Math.max(0, W_UPTIME - plain.length))
+  const uptimeH_c  = (() => {
+    if (headerFlashColumn === 'uptime') {
+      const ft = (dir + ' ' + uptimeLabel).length <= W_UPTIME ? dir + ' ' + uptimeLabel : uptimeLabel + dir
+      return flashHeader(ft, W_UPTIME)
+    }
+    if (sortColumn === 'uptime') return sortActiveHeader(uptimeLabel, W_UPTIME)
+    const padding = ' '.repeat(Math.max(0, W_UPTIME - uptimeLabel.length))
     return themeColors.hotkey('U') + themeColors.dim('p%' + padding)
+  })()
+  const originH_c  = (() => {
+    if (headerFlashColumn === 'origin') {
+      const ft = (dir + ' ' + originLabel).length <= wSource ? dir + ' ' + originLabel : originLabel + dir
+      return flashHeader(ft, wSource)
+    }
+    if (sortColumn === 'origin') return sortActiveHeader(originLabel, wSource)
+    if (originFilterMode > 0) return themeColors.accentBold(originLabel.padEnd(wSource))
+    const plain = isCompact ? 'PrOD…' : 'PrOviDer'
+    const padding = ' '.repeat(Math.max(0, wSource - plain.length))
+    if (isCompact) {
+      return themeColors.dim('Pr') + themeColors.hotkey('O') + themeColors.hotkey('D') + themeColors.dim('…' + padding)
+    }
+    return themeColors.dim('Pr') + themeColors.hotkey('O') + themeColors.dim('vi') + themeColors.hotkey('D') + themeColors.dim('er' + padding)
   })()
 
   // 📖 Benchmark headers — split the old combined AI Speed field into latency + throughput.
