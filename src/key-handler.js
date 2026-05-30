@@ -877,6 +877,7 @@ export function createKeyHandler(ctx) {
     const visible = state.results.filter(r => !r.hidden)
     state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
       pinFavorites: state.favoritesPinnedAndSticky,
+      benchmarkResults: state.benchmarkResults,
     })
     if (resetCursor) {
       state.cursor = 0
@@ -1463,7 +1464,9 @@ export function createKeyHandler(ctx) {
     }
 
     // 📖 Ctrl+U: Global AI Speed Benchmark (benchmark all visible models, 5 concurrent)
-    if (key.ctrl && key.name === 'u') {
+    // 📖 Also handles the raw \x15 byte as a fallback for terminals where readline doesn't
+    // 📖 set key.ctrl properly (same pattern as Ctrl+C → \x03 fallback).
+    if ((key.ctrl && key.name === 'u') || str === '\x15') {
       await runGlobalBenchmark(state)
       return
     }
@@ -3092,6 +3095,7 @@ export function createMouseEventHandler(ctx) {
     const visible = state.results.filter(r => !r.hidden)
     state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
       pinFavorites: state.favoritesPinnedAndSticky,
+      benchmarkResults: state.benchmarkResults,
     })
   }
 
@@ -3116,6 +3120,7 @@ export function createMouseEventHandler(ctx) {
     const visible = state.results.filter(r => !r.hidden)
     state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
       pinFavorites: state.favoritesPinnedAndSticky,
+      benchmarkResults: state.benchmarkResults,
     })
     // 📖 If we unfavorited while pinned mode is on, reset cursor to top
     if (wasFavorite && state.favoritesPinnedAndSticky) {
@@ -3433,6 +3438,7 @@ export function createMouseEventHandler(ctx) {
           const visible = state.results.filter(r => !r.hidden)
           state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
             pinFavorites: state.favoritesPinnedAndSticky,
+            benchmarkResults: state.benchmarkResults,
           })
           state.cursor = 0
           state.scrollOffset = 0
