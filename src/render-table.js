@@ -818,7 +818,8 @@ export function renderTable({
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B'))(text)
         break
       case 'Unstable':
-        verdictIcon = '⚠️'
+        // 📖 Avoid ⚠️ here: its variation selector has inconsistent terminal width and shifts the tiny ❔ column.
+        verdictIcon = '🟥'
         verdictText = `${verdictIcon} Unstable`
         verdictColor = themeColors.errorBold
         break

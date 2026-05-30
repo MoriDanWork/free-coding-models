@@ -32,7 +32,7 @@
 | **🟠 Slow** | `Slow` | Avg 1000–2999ms. |
 | **🔴 Very Slow** | `Very Slow` | Avg 3000–4999ms. |
 | **🔥 Overloaded** | `Overloaded` | Server returned 429/503 (rate limited or capacity hit). |
-| **⚠️ Unstable** | `Unstable` | Was previously up but now timing out, or avg > 5000ms. |
+| **🟥 Unstable** | `Unstable` | Was previously up but now timing out, or avg > 5000ms. |
 | **⚫ Not Active** | `Not Active` | No successful pings yet and the model is currently down/timeout. |
 | **⏳ Pending** | `Pending` | First usable latency sample is still missing. |
 
