@@ -8,7 +8,7 @@
  *   with consistent alignment, colorization, and viewport clipping.
  *
  *   🎯 Key features:
- *   - Full table layout with tier, latency, stability, uptime, token totals, and usage columns
+ *   - Full table layout with micro verdict indicator, tier, latency, stability, uptime, token totals, and usage columns
  *   - Hotkey-aware header lettering so highlighted letters always match live sort/filter keys
  *   - Emoji-aware padding via padEndDisplay for aligned verdict/status cells
  *   - Viewport clipping with above/below indicators
@@ -79,6 +79,7 @@ export function getLastLayout() { return _lastLayout }
 
 // 📖 Column name → sort key mapping for mouse click-to-sort on header row
 const COLUMN_SORT_MAP = {
+  mood: 'verdict',
   rank: 'rank',
   tier: null, // 📖 Tier column click cycles tier filter rather than sorting
   swe: 'swe',
@@ -271,16 +272,17 @@ export function renderTable({
   const COL_SEP = getColumnSpacing()
   const SEP_W = 3  // ' │ ' display width
   const ROW_MARGIN = 2  // left margin '  '
+  const W_MOOD = 2
   const W_RANK = 6
   const W_TIER = 5
   const W_CTX = 4
   const W_SOURCE = 14
   const W_MODEL = 26
   const W_SWE = 5
-  const W_STATUS = 18
-  const W_VERDICT = 14
+  const W_STATUS = 17
+  const W_VERDICT = 13
   const W_UPTIME = 6
-  const W_AI_LATENCY = 18
+  const W_AI_LATENCY = 17
   const W_TPS = 5
 
   // const W_TOKENS = 7 // Used column removed
@@ -290,11 +292,12 @@ export function renderTable({
   // 📖 Responsive column visibility: progressively hide least-useful columns
   // 📖 and shorten header labels when terminal width is insufficient.
   // 📖 Hiding order (least useful first): Rank → AI Latency/TPS → Up% → Tier → Stability
-  // 📖 Compact mode shrinks: Latest Ping→Lat. P (9), Avg Ping→Avg. P (8),
-  // 📖 Stability→StaB. (8), Provider→4chars+… (7), Health→6chars+… (13)
+  // 📖 Ping columns stay compact because the cell values are tiny numbers without a "ms" suffix.
+  // 📖 Both ping columns use the same 9-char width so Last Ping and Avg Ping fit cleanly.
+  // 📖 Compact mode also shrinks Stability→StaB. (8), Provider→4chars+… (7), Health→6chars+… (13).
   // 📖 Breakpoints are computed dynamically from active column widths.
-  let wPing = 14
-  let wAvg = 11
+  let wPing = 9
+  let wAvg = 9
   let wStab = 11
   let wSource = W_SOURCE
   let wStatus = W_STATUS
@@ -310,6 +313,7 @@ export function renderTable({
     // 📖 Dynamically compute needed row width from visible columns
     const calcWidth = () => {
       const cols = []
+      cols.push(W_MOOD)
       if (showRank) cols.push(W_RANK)
       if (showTier) cols.push(W_TIER)
       cols.push(W_SWE, W_CTX, W_MODEL, wSource, wPing, wAvg, wStatus, W_VERDICT)
@@ -322,8 +326,8 @@ export function renderTable({
     // 📖 Step 1: Compact mode — shorten labels and reduce column widths
     if (calcWidth() > terminalCols) {
       isCompact = true
-      wPing = 9      // 'Lat. P' instead of 'Latest Ping'
-      wAvg = 8       // 'Avg. P' instead of 'Avg Ping'
+      wPing = 9      // 'Last Ping' stays compact and matches Avg Ping width
+      wAvg = 9       // 'Avg Ping' stays aligned with Last Ping
       wStab = 8      // 'StaB.' instead of 'Stability'
       wSource = 7    // Provider truncated to 4 chars + '…', 7 cols total
       wStatus = 13   // Health truncated after 6 chars + '…'
@@ -342,6 +346,7 @@ export function renderTable({
   // 📖 matching exactly what renderTable paints so click-to-sort hits the right column.
   {
     const colDefs = []
+    colDefs.push({ name: 'mood', width: W_MOOD })
     if (showRank) colDefs.push({ name: 'rank', width: W_RANK })
     if (showTier) colDefs.push({ name: 'tier', width: W_TIER })
     colDefs.push({ name: 'swe', width: W_SWE })
@@ -421,14 +426,15 @@ export function renderTable({
   const dir = sortDirection === 'asc' ? '↑' : '↓'
 
   // 📖 Plain header labels — arrows are appended dynamically below.
+  const moodLabel    = '❔'
   const rankLabel    = 'Rank'
   const tierLabel    = 'Tier'
   const originLabel  = isCompact ? 'PrOD…' : 'Provider'
   const modelLabel   = 'Model'
   const sweLabel     = 'SWE%'
   const ctxLabel     = 'CTX'
-  const pingLabel    = isCompact ? 'Lat. P' : 'Latest Ping'
-  const avgLabel     = isCompact ? 'Avg. P' : 'Avg Ping'
+  const pingLabel    = 'Last Ping'
+  const avgLabel     = 'Avg Ping'
   const healthLabel  = 'Health'
   const verdictLabel = 'Verdict'
   const stabLabel    = isCompact ? 'StaB.' : 'Stability'
@@ -483,6 +489,13 @@ export function renderTable({
     return colorFirst(label, width)
   }
 
+  const moodH_c    = (() => {
+    // 📖 Tiny verdict indicator column: keep it emoji-only, no arrow, so it stays 2 cells wide.
+    const padded = padEndDisplay(moodLabel, W_MOOD)
+    if (headerFlashColumn === 'verdict') return chalk.bold.rgb(255, 255, 255).bgRgb(...currentPalette().accentStrong)(padded)
+    if (sortColumn === 'verdict') return chalk.bold.rgb(255, 255, 255).bgRgb(...currentPalette().cursor.defaultBg)(padded)
+    return themeColors.hotkey(padded)
+  })()
   const rankH_c    = headerStyle('rank', rankLabel, W_RANK)
   const tierH_c    = (() => {
     if (headerFlashColumn === 'tier') return flashHeader(tierLabel, W_TIER)
@@ -554,7 +567,7 @@ export function renderTable({
 
   // 📖 Usage column removed from UI – no header or separator for it.
   // 📖 Header row: conditionally include columns based on responsive visibility
-  const headerParts = []
+  const headerParts = [moodH_c]
   if (showRank) headerParts.push(rankH_c)
   if (showTier) headerParts.push(tierH_c)
   headerParts.push(sweH_c, ctxH_c, modelH_c, originH_c, pingH_c, avgH_c, healthH_c, verdictH_c)
@@ -771,52 +784,63 @@ export function renderTable({
 
     // 📖 Verdict column - use getVerdict() for stability-aware verdicts, then render with emoji
     const verdict = getVerdict(r)
-    let verdictText, verdictColor
+    let verdictText, verdictIcon, verdictColor
     // 📖 Verdict colors follow the same green→red gradient as TIER_COLOR / SWE%
     switch (verdict) {
       case 'Perfect':
-        verdictText = 'Perfect 🚀'
+        verdictIcon = '🟩'
+        verdictText = `${verdictIcon} Perfect`
         verdictColor = themeColors.successBold
         break
       case 'Normal':
-        verdictText = 'Normal ✅'
+        verdictIcon = '🟢'
+        verdictText = `${verdictIcon} Normal`
         verdictColor = themeColors.metricGood
         break
       case 'Spiky':
-        verdictText = 'Spiky 📈'
+        verdictIcon = '🟡'
+        verdictText = `${verdictIcon} Spiky`
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A+'))(text)
         break
       case 'Slow':
-        verdictText = 'Slow 🐢'
+        verdictIcon = '🟠'
+        verdictText = `${verdictIcon} Slow`
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A-'))(text)
         break
       case 'Very Slow':
-        verdictText = 'Very Slow 🐌'
+        verdictIcon = '🔴'
+        verdictText = `${verdictIcon} Very Slow`
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B+'))(text)
         break
       case 'Overloaded':
-        verdictText = 'Overloaded 🔥'
+        verdictIcon = '🔥'
+        verdictText = `${verdictIcon} Overloaded`
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B'))(text)
         break
       case 'Unstable':
-        verdictText = 'Unstable  ⚠️'
+        verdictIcon = '⚠️'
+        verdictText = `${verdictIcon} Unstable`
         verdictColor = themeColors.errorBold
         break
       case 'Not Active':
-        verdictText = 'Not Active  👻'
+        verdictIcon = '⚫'
+        verdictText = `${verdictIcon} Not Active`
         verdictColor = themeColors.dim
         break
       case 'Pending':
-        verdictText = 'Pending ⏳'
+        verdictIcon = '⏳'
+        verdictText = `${verdictIcon} Pending`
         verdictColor = themeColors.dim
         break
       default:
-        verdictText = 'Unusable 💀'
+        verdictIcon = '💀'
+        verdictText = `${verdictIcon} Unusable`
         verdictColor = (text) => chalk.bold.rgb(...getTierRgb('C'))(text)
         break
     }
     // 📖 Use padEndDisplay to account for emoji display width (2 cols each) so all rows align
     const speedCell = verdictColor(padEndDisplay(verdictText, W_VERDICT))
+    const moodCell = padEndDisplay(verdictIcon, W_MOOD)
 
     // 📖 Stability column - composite score (0–100) from p95 + jitter + spikes + uptime
     // 📖 Left-aligned to sit flush under the column header
@@ -865,35 +889,52 @@ export function renderTable({
     // 📖 AI Latency + TPS columns — same benchmark result, split into two readable metrics.
     // 📖 Benchmark results are shown regardless of health status (up/timeout/down/429/noauth).
     // 📖 If benchmark failed → red dash. Error details live in the Health column.
-    // 📖 If no benchmark has been run yet, fallback to health status display for latency.
+    // 📖 If no benchmark has been run yet, show dim dash.
+    // 📖 Retry badge (↻N) is colored blue and spaced from the main value.
     const benchmarkKey = `${r.providerKey}/${r.modelId}`
     const benchmarkResult = benchmarkResults[benchmarkKey]
     const isBenchmarkRunning = benchmarkRunning.has(benchmarkKey)
     const hasBenchmark = benchmarkResult || isBenchmarkRunning
     const benchmarkOk = benchmarkResult && benchmarkResult.ok
-    const latencyText = isBenchmarkRunning
+
+    // 📖 Build latency cell: value + blue retry badge
+    const latParsed = isBenchmarkRunning
       ? formatBenchmarkLatency(benchmarkResult, { running: true, frame })
       : benchmarkOk
         ? formatBenchmarkLatency(benchmarkResult)
-        : '—'
-    const tpsText = isBenchmarkRunning
+        : { text: '—', retryBadge: '' }
+    const latValue = benchmarkOk
+      ? themeColors.metricGood(latParsed.text)
+      : hasBenchmark
+        ? themeColors.metricBad(latParsed.text)
+        : themeColors.dim(latParsed.text)
+    const latBadge = latParsed.retryBadge
+      ? themeColors.info(' ' + latParsed.retryBadge)
+      : ''
+    const latBadgeWidth = latParsed.retryBadge ? displayWidth(' ' + latParsed.retryBadge) : 0
+    const latPad = wAiLatency - displayWidth(latParsed.text) - latBadgeWidth
+    const latencyCell = latValue + latBadge + themeColors.dim(''.padEnd(Math.max(0, latPad)))
+
+    // 📖 Build TPS cell: value + blue retry badge
+    const tpsParsed = isBenchmarkRunning
       ? formatBenchmarkTps(benchmarkResult, { running: true, frame })
       : benchmarkOk
         ? formatBenchmarkTps(benchmarkResult)
-        : '—'
-    const latencyCell = benchmarkOk
-      ? themeColors.metricGood(latencyText.padEnd(wAiLatency))
-      : hasBenchmark || !benchmarkOk
-        ? themeColors.metricBad(latencyText.padEnd(wAiLatency))
-        : themeColors.dim(latencyText.padEnd(wAiLatency))
-    const tpsCell = benchmarkOk || isBenchmarkRunning
-      ? themeColors.metricGood(tpsText.padEnd(W_TPS))
+        : { text: '—', retryBadge: '' }
+    const tpsValue = benchmarkOk || isBenchmarkRunning
+      ? themeColors.metricGood(tpsParsed.text)
       : hasBenchmark
-        ? themeColors.metricBad(tpsText.padEnd(W_TPS))
-        : themeColors.dim(tpsText.padEnd(W_TPS))
+        ? themeColors.metricBad(tpsParsed.text)
+        : themeColors.dim(tpsParsed.text)
+    const tpsBadge = tpsParsed.retryBadge
+      ? themeColors.info(' ' + tpsParsed.retryBadge)
+      : ''
+    const tpsBadgeWidth = tpsParsed.retryBadge ? displayWidth(' ' + tpsParsed.retryBadge) : 0
+    const tpsPad = W_TPS - displayWidth(tpsParsed.text) - tpsBadgeWidth
+    const tpsCell = tpsValue + tpsBadge + themeColors.dim(''.padEnd(Math.max(0, tpsPad)))
 
     // 📖 Build row: conditionally include columns based on responsive visibility
-    const rowParts = []
+    const rowParts = [moodCell]
     if (showRank) rowParts.push(num)
     if (showTier) rowParts.push(tier)
     rowParts.push(sweCell, ctxCell, nameCell, sourceCell, pingCell, avgCell, status, speedCell)

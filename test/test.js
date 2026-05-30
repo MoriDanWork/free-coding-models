@@ -50,7 +50,7 @@ import {
 import { buildDefaultRouterSet, cloneHeadersForUpstream, createRouterRuntimeForTest, formatOpenAiError } from '../src/router-daemon.js'
 import { formatRouterDuration, normalizeRouterDashboardSnapshot, parseRouterDashboardSseFrame } from '../src/router-dashboard.js'
 import { buildProviderModelTokenKey, loadTokenUsageByProviderModel, formatTokenTotalCompact } from '../src/token-usage-reader.js'
-import { renderTable } from '../src/render-table.js'
+import { renderTable, getLastLayout } from '../src/render-table.js'
 import { createOverlayRenderers } from '../src/overlays.js'
 import { buildProviderModelsUrl, parseProviderModelIds, listProviderTestModels, classifyProviderTestOutcome, buildProviderTestDetail } from '../src/key-handler.js'
 import { buildCliHelpText } from '../src/cli-help.js'
@@ -1144,6 +1144,19 @@ describe('sortResults', () => {
 })
 
 describe('renderTable health labels', () => {
+  it('renders the tiny verdict indicator column and matching verdict emoji', () => {
+    const output = stripAnsi(renderTable({
+      results: [mockResult({ status: 'up', pings: [{ ms: 200, code: '200' }], providerKey: 'nvidia', totalTokens: 0 })],
+      pendingPings: 0,
+      frame: 0,
+      terminalRows: 12,
+      terminalCols: 200,
+    }))
+
+    assert.match(output, /❔/)
+    assert.match(output, /🟩\s+.*🟩 Perfect/)
+  })
+
   it('renders explicit labels for common HTTP failure codes', () => {
     const results = [
       mockResult({ label: '429 model', status: 'down', httpCode: '429', pings: [{ ms: 0, code: '429' }], providerKey: 'nvidia', totalTokens: 0 }),
@@ -1197,7 +1210,7 @@ describe('renderTable benchmark columns', () => {
     assert.doesNotMatch(output, /4\.3s \/ 13 TPS/)
   })
 
-  it('mirrors bad Health text in AI Latency and keeps TPS empty', () => {
+  it('keeps benchmark failure details out of AI Latency while Health shows the row error', () => {
     const results = [mockResult({
       label: 'Throttled model',
       providerKey: 'nvidia',
@@ -1217,7 +1230,7 @@ describe('renderTable benchmark columns', () => {
       },
     }))
 
-    assert.equal((output.match(/429 TRY LATER/g) || []).length, 2)
+    assert.equal((output.match(/429 TRY LATER/g) || []).length, 1)
     assert.doesNotMatch(output, /TIMEOUT/)
   })
 })
@@ -1350,32 +1363,43 @@ describe('renderTable responsive column visibility', () => {
   // 📖 Helper: render with a specific terminalCols value (all other params at sensible defaults)
   const renderAtWidth = (cols) => renderTable({ results: [mockResult({ providerKey: 'nvidia', totalTokens: 0, pings: [{ ms: 200, code: '200' }] })], sortColumn: 'avg', sortDirection: 'asc', pingInterval: 10_000, lastPingTime: Date.now(), mode: 'opencode', terminalRows: 30, terminalCols: cols, pingMode: 'normal', pingModeSource: 'auto', settingsUpdateState: 'idle', versionAlertsEnabled: false })
 
-  // 📖 Full row width = 198 cols after splitting AI Latency + TPS.
-  // 📖 Compact mode (170 cols): wPing 14→9, wAvg 11→8, wStab 11→8, wSource 14→7, wStatus/AI Latency 18→13.
-  // 📖 Width breakpoints are computed in renderTable() from the active columns.
+  // 📖 Full row width is computed dynamically from active columns.
+  // 📖 Ping columns are permanently compact: Last Ping and Avg Ping both use 9 chars.
+  // 📖 Compact mode shrinks Stability, Provider, Health, and AI Latency before hiding optional columns.
 
-  it('shows all columns and full labels at very wide terminal (200 cols)', () => {
+  it('shows all columns and compact ping labels at very wide terminal (200 cols)', () => {
     const output = renderAtWidth(200)
     assert.match(output, /Rank/)
     assert.match(output, /Tier/)
     assert.match(output, /Up%/)
     // 📖 Header renders StaBility (capital B for hotkey)
     assert.match(output, /StaBility/)
-    assert.match(output, /Latest Ping/)
+    assert.match(output, /Last Ping/)
     assert.match(output, /Avg Ping/)
+    assert.doesNotMatch(output, /Latest Ping/)
     // 📖 Full provider header 'PrOviDer' visible
     assert.match(output, /Provider|PrOviDer/)
     assert.match(output, /AI Latency/)
     assert.match(output, /TPS/)
   })
 
-  it('uses compact labels in compact mode (slightly narrow)', () => {
+  it('keeps ping columns at the same 9-char width', () => {
+    renderAtWidth(200)
+    const layout = getLastLayout()
+    const pingCol = layout.columns.find((column) => column.name === 'ping')
+    const avgCol = layout.columns.find((column) => column.name === 'avg')
+    assert.ok(pingCol, 'ping column should exist')
+    assert.ok(avgCol, 'avg column should exist')
+    assert.equal(pingCol.xEnd - pingCol.xStart + 1, 9)
+    assert.equal(avgCol.xEnd - avgCol.xStart + 1, 9)
+  })
+
+  it('keeps compact ping labels in compact mode (slightly narrow)', () => {
     // 📖 At 175 cols, compact mode is active but no columns hidden yet
     const output = renderAtWidth(175)
-    assert.match(output, /Lat\. P/)
-    assert.match(output, /Avg\. P/)
+    assert.match(output, /Last Ping/)
+    assert.match(output, /Avg Ping/)
     assert.doesNotMatch(output, /Latest Ping/)
-    assert.doesNotMatch(output, /Avg Ping/)
     // 📖 Provider header should be compact 'PrOD…'
     assert.match(output, /PrOD…/)
     // 📖 All optional columns still visible (Rank + AI Latency/TPS)
@@ -4298,6 +4322,10 @@ describe('Shell Env', () => {
 })
 
 describe('COLUMN_SORT_MAP', () => {
+  it('maps mood column to verdict sort key', () => {
+    assert.equal(COLUMN_SORT_MAP.mood, 'verdict')
+  })
+
   it('maps rank column to rank sort key', () => {
     assert.equal(COLUMN_SORT_MAP.rank, 'rank')
   })
@@ -4346,13 +4374,13 @@ describe('COLUMN_SORT_MAP', () => {
     assert.equal(COLUMN_SORT_MAP.uptime, 'uptime')
   })
 
-  it('maps benchmark display columns to null because they are not sortable', () => {
-    assert.equal(COLUMN_SORT_MAP.aiLatency, null)
-    assert.equal(COLUMN_SORT_MAP.tps, null)
+  it('maps benchmark display columns to benchmark sort keys', () => {
+    assert.equal(COLUMN_SORT_MAP.aiLatency, 'aiLatency')
+    assert.equal(COLUMN_SORT_MAP.tps, 'tps')
   })
 
   it('has entries for all expected columns', () => {
-    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime', 'aiLatency', 'tps']
+    const expected = ['mood', 'rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime', 'aiLatency', 'tps']
     for (const col of expected) {
       assert.ok(col in COLUMN_SORT_MAP, `missing column: ${col}`)
     }
@@ -4611,38 +4639,38 @@ describe('sync-set', () => {
   describe('benchmark display formatters', () => {
     it('splits 4300ms + 56 tokens into AI Latency and TPS values', () => {
       const result = { ok: true, totalMs: 4300, outputTokens: 56, tokensPerSecond: 13 }
-      assert.equal(formatBenchmarkLatency(result), '4.3s')
-      assert.equal(formatBenchmarkTps(result), '13')
+      assert.deepEqual(formatBenchmarkLatency(result), { text: '4.3s', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps(result), { text: '13', retryBadge: '' })
     })
 
     it('shows dash for empty state', () => {
-      assert.equal(formatBenchmarkLatency(null), '—')
-      assert.equal(formatBenchmarkTps(null), '—')
+      assert.deepEqual(formatBenchmarkLatency(null), { text: '—', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps(null), { text: '—', retryBadge: '' })
     })
 
     it('shows spinner when running', () => {
-      assert.equal(formatBenchmarkLatency(null, { running: true, frame: 0 }), '⠋')
-      assert.equal(formatBenchmarkTps(null, { running: true, frame: 0 }), '⠋')
+      assert.deepEqual(formatBenchmarkLatency(null, { running: true, frame: 0 }), { text: '⠋', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps(null, { running: true, frame: 0 }), { text: '⠋', retryBadge: '' })
     })
 
     it('shows compact error code in latency and dash in TPS on failure', () => {
-      assert.equal(formatBenchmarkLatency({ ok: false, code: 'TIMEOUT' }), 'TIMEOUT')
-      assert.equal(formatBenchmarkLatency({ ok: false, code: '401' }), '401')
-      assert.equal(formatBenchmarkLatency({ ok: false, code: '429' }), '429')
-      assert.equal(formatBenchmarkLatency({ ok: false, code: 'ERR' }), 'ERR')
-      assert.equal(formatBenchmarkTps({ ok: false, code: 'TIMEOUT' }), '—')
+      assert.deepEqual(formatBenchmarkLatency({ ok: false, code: 'TIMEOUT' }), { text: 'TIMEOUT', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkLatency({ ok: false, code: '401' }), { text: '401', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkLatency({ ok: false, code: '429' }), { text: '429', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkLatency({ ok: false, code: 'ERR' }), { text: 'ERR', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps({ ok: false, code: 'TIMEOUT' }), { text: '—', retryBadge: '' })
     })
 
     it('uses whole seconds when latency is >= 10s', () => {
       const result = { ok: true, totalMs: 12300, outputTokens: 100, tokensPerSecond: 8 }
-      assert.equal(formatBenchmarkLatency(result), '12s')
-      assert.equal(formatBenchmarkTps(result), '8')
+      assert.deepEqual(formatBenchmarkLatency(result), { text: '12s', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps(result), { text: '8', retryBadge: '' })
     })
 
     it('rounds TPS to integer', () => {
       const result = { ok: true, totalMs: 1000, outputTokens: 15, tokensPerSecond: 15.7 }
-      assert.equal(formatBenchmarkLatency(result), '1.0s')
-      assert.equal(formatBenchmarkTps(result), '16')
+      assert.deepEqual(formatBenchmarkLatency(result), { text: '1.0s', retryBadge: '' })
+      assert.deepEqual(formatBenchmarkTps(result), { text: '16', retryBadge: '' })
     })
 
     it('keeps legacy combined formatter available', () => {

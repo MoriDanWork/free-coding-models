@@ -1129,10 +1129,19 @@ export function createKeyHandler(ctx) {
     state.globalBenchmarkRunning = true
 
     // 📖 Use state.results (ALL models) instead of state.visibleSorted so the benchmark
-    // 📖 runs on every model regardless of TUI filters (configured-only, usable-only, tier,
-    // 📖 health, etc.). The whole point of Ctrl+U is to get real latency/TPS data even on
-    // 📖 models that are timeout, down, 429, noauth — zero filtering.
-    const models = state.results
+    // 📖 runs on every model regardless of TUI filters. Zero filtering.
+    // 📖 Sort smart: UP models with low ping first (they finish fast and give instant feedback),
+    // 📖 then timeout/down/429 models last (they take longer and may need retries).
+    const healthPriority = { up: 0, pending: 1, timeout: 2, noauth: 3, auth_error: 4, down: 5 }
+    const models = [...state.results].sort((a, b) => {
+      const hpA = healthPriority[a.status] ?? 6
+      const hpB = healthPriority[b.status] ?? 6
+      if (hpA !== hpB) return hpA - hpB
+      // 📖 Same health → sort by latest ping (lower first, timeouts/downtimes to end)
+      const pingA = typeof a.pings?.[a.pings.length - 1]?.ms === 'number' ? a.pings[a.pings.length - 1].ms : 99999
+      const pingB = typeof b.pings?.[b.pings.length - 1]?.ms === 'number' ? b.pings[b.pings.length - 1].ms : 99999
+      return pingA - pingB
+    })
     const total = models.length
     state.globalBenchmarkTotal = total
     state.globalBenchmarkCompleted = 0

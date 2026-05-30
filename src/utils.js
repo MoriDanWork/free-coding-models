@@ -235,7 +235,7 @@ export const getStabilityScore = (r) => {
 //   - 'stability' (B key) — stability score (0–100, higher = more stable)
 //
 // 📖 sortDirection 'asc' = ascending (smallest first), 'desc' = descending (largest first)
-export const sortResults = (results, sortColumn, sortDirection) => {
+export const sortResults = (results, sortColumn, sortDirection, { benchmarkResults = {} } = {}) => {
   return [...results].sort((a, b) => {
     let cmp = 0
 
@@ -317,6 +317,30 @@ export const sortResults = (results, sortColumn, sortDirection) => {
         // 📖 Models with no data (-1) sort to the bottom
         cmp = getStabilityScore(a) - getStabilityScore(b)
         break
+      case 'aiLatency': {
+        // 📖 Sort by AI benchmark latency (totalMs). Lower = better.
+        // 📖 Models without benchmark data sort to the bottom.
+        const aKey = `${a.providerKey}/${a.modelId}`
+        const bKey = `${b.providerKey}/${b.modelId}`
+        const aBench = benchmarkResults[aKey]
+        const bBench = benchmarkResults[bKey]
+        const aMs = (aBench?.ok && aBench.totalMs != null) ? aBench.totalMs : Infinity
+        const bMs = (bBench?.ok && bBench.totalMs != null) ? bBench.totalMs : Infinity
+        cmp = aMs - bMs
+        break
+      }
+      case 'tps': {
+        // 📖 Sort by benchmark throughput (tokens/second). Higher = better.
+        // 📖 Models without benchmark data sort to the bottom.
+        const aKey2 = `${a.providerKey}/${a.modelId}`
+        const bKey2 = `${b.providerKey}/${b.modelId}`
+        const aBench2 = benchmarkResults[aKey2]
+        const bBench2 = benchmarkResults[bKey2]
+        const aTps = (aBench2?.ok && aBench2.tokensPerSecond != null) ? aBench2.tokensPerSecond : -1
+        const bTps = (bBench2?.ok && bBench2.tokensPerSecond != null) ? bBench2.tokensPerSecond : -1
+        cmp = aTps - bTps
+        break
+      }
       case 'usage':
         // 📖 Sort by quota usage percent (usagePercent numeric field, 0–100)
         // 📖 Models with no usage data (undefined/null) are treated as 0 — stable tie-break

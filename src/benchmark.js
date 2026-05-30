@@ -72,28 +72,28 @@ function retryBadge(retries) {
   return (typeof retries === 'number' && retries > 0) ? `↻${retries}` : ''
 }
 
-// 📖 formatBenchmarkLatency: Turn a raw benchmark result into the AI Latency column value.
-// 📖 Success: "4.3s" / "12s↻2" (with retry badge). Error: compact error code. Empty: "—".
+// 📖 formatBenchmarkLatency: Returns { text, retryBadge } so the renderer can color
+// 📖 the retry badge independently (blue) vs the latency value (green).
 export function formatBenchmarkLatency(result, { running = false, frame = 0 } = {}) {
-  if (running) return benchmarkSpinner(frame)
-  if (!result) return '—'
-  if (!result.ok) return result.code || 'ERR'
+  if (running) return { text: benchmarkSpinner(frame), retryBadge: '' }
+  if (!result) return { text: '—', retryBadge: '' }
+  if (!result.ok) return { text: result.code || 'ERR', retryBadge: '' }
 
   const totalSeconds = result.totalMs / 1000
   const badge = retryBadge(result.retries)
-  return totalSeconds >= 10
-    ? totalSeconds.toFixed(0) + 's' + badge
-    : totalSeconds.toFixed(1) + 's' + badge
+  const latency = totalSeconds >= 10
+    ? totalSeconds.toFixed(0) + 's'
+    : totalSeconds.toFixed(1) + 's'
+  return { text: latency, retryBadge: badge }
 }
 
-// 📖 formatBenchmarkTps: Turn a raw benchmark result into the TPS column value.
-// 📖 Success is the rounded tokens/second number. Retry badge shown when retries > 0.
-// 📖 Errors and empty state stay as a dim dash in the table to avoid duplicating codes.
+// 📖 formatBenchmarkTps: Returns { text, retryBadge } so the renderer can color
+// 📖 the retry badge independently (blue) vs the TPS value (green).
 export function formatBenchmarkTps(result, { running = false, frame = 0 } = {}) {
-  if (running) return benchmarkSpinner(frame)
-  if (!result || !result.ok) return '—'
+  if (running) return { text: benchmarkSpinner(frame), retryBadge: '' }
+  if (!result || !result.ok) return { text: '—', retryBadge: '' }
   const badge = retryBadge(result.retries)
-  return String(Math.round(result.tokensPerSecond ?? 0)) + badge
+  return { text: String(Math.round(result.tokensPerSecond ?? 0)), retryBadge: badge }
 }
 
 // 📖 formatBenchmarkResult: legacy combined formatter retained for integrations/tests
@@ -102,7 +102,9 @@ export function formatBenchmarkResult(result, options = {}) {
   if (options.running) return benchmarkSpinner(options.frame ?? 0)
   if (!result) return '—'
   if (!result.ok) return result.code || 'ERR'
-  return `${formatBenchmarkLatency(result)} / ${formatBenchmarkTps(result)} TPS`
+  const lat = formatBenchmarkLatency(result)
+  const tps = formatBenchmarkTps(result)
+  return `${lat.text}${lat.retryBadge} / ${tps.text}${tps.retryBadge} TPS`
 }
 
 // 📖 buildBenchmarkRequest: Build provider-specific benchmark request.

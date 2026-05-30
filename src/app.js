@@ -337,7 +337,7 @@ export async function runApp(cliArgs, config) {
       status: 'pending',
       pings: [],  // 📖 All ping results (ms or 'TIMEOUT')
       httpCode: null,
-      isPinging: false, // 📖 Per-row live flag so Latest Ping can keep last value and show a spinner during refresh.
+      isPinging: false, // 📖 Per-row live flag so Last Ping can keep last value and show a spinner during refresh.
       hidden: false,  // 📖 Simple flag to hide/show models
     }))
   syncFavoriteFlags(results, config)
@@ -785,6 +785,7 @@ export async function runApp(cliArgs, config) {
       const visible = state.results.filter(r => !r.hidden)
       state.visibleSorted = sortResultsWithPinnedFavorites(visible, state.sortColumn, state.sortDirection, {
         pinFavorites: state.favoritesPinnedAndSticky,
+        benchmarkResults: state.benchmarkResults,
       })
       if (state.cursor >= state.visibleSorted.length) state.cursor = Math.max(0, state.visibleSorted.length - 1)
       adjustScrollOffset(state)
@@ -886,6 +887,7 @@ export async function runApp(cliArgs, config) {
   const initialVisible = state.results.filter(r => !r.hidden)
   state.visibleSorted = sortResultsWithPinnedFavorites(initialVisible, state.sortColumn, state.sortDirection, {
     pinFavorites: state.favoritesPinnedAndSticky,
+    benchmarkResults: state.benchmarkResults,
   })
 
   process.stdout.write(ALT_HOME + renderTable({

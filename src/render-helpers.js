@@ -202,7 +202,7 @@ export function calculateViewport(terminalRows, scrollOffset, totalModels, lineB
 // 📖 Non-favorites: active sort column/direction.
 // 📖 Models that are both recommended AND favorite — show in recommended section.
 // 📖 pinFavorites=false keeps favorites highlighted but lets normal sort/filter order apply.
-export function sortResultsWithPinnedFavorites(results, sortColumn, sortDirection, { pinFavorites = true } = {}) {
+export function sortResultsWithPinnedFavorites(results, sortColumn, sortDirection, { pinFavorites = true, benchmarkResults = {} } = {}) {
   if (!pinFavorites) {
     const recommendedRows = results
       .filter((r) => r.isRecommended)
@@ -210,7 +210,8 @@ export function sortResultsWithPinnedFavorites(results, sortColumn, sortDirectio
     const nonRecommendedRows = sortResults(
       results.filter((r) => !r.isRecommended),
       sortColumn,
-      sortDirection
+      sortDirection,
+      { benchmarkResults }
     )
     return [...recommendedRows, ...nonRecommendedRows]
   }
@@ -224,7 +225,7 @@ export function sortResultsWithPinnedFavorites(results, sortColumn, sortDirectio
   const bothRows = results
     .filter((r) => r.isRecommended && r.isFavorite)
     .sort((a, b) => (b.recommendScore || 0) - (a.recommendScore || 0))
-  const nonSpecialRows = sortResults(results.filter((r) => !r.isFavorite && !r.isRecommended), sortColumn, sortDirection)
+  const nonSpecialRows = sortResults(results.filter((r) => !r.isFavorite && !r.isRecommended), sortColumn, sortDirection, { benchmarkResults })
   return [...bothRows, ...recommendedRows, ...favoriteRows, ...nonSpecialRows]
 }
 
