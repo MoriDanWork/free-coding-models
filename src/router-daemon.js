@@ -47,7 +47,7 @@ import {
   normalizeRouterConfig,
   saveConfig,
 } from './config.js'
-import { resolveCloudflareUrl } from './ping.js'
+import { buildChatCompletionPingBody, resolveCloudflareUrl, shouldUseDisabledThinkingForProvider } from './ping.js'
 import { sendUsageTelemetry } from './telemetry.js'
 
 export const ROUTER_DEFAULT_PORT = 19280
@@ -1200,12 +1200,11 @@ class RouterRuntime {
         : await fetch(providerUrl, {
             method: 'POST',
             headers: cloneHeadersForUpstream({}, apiKey, candidate.provider),
-            body: JSON.stringify({
-              model: getApiModelId(candidate.provider, candidate.model),
-              messages: [{ role: 'user', content: 'hi' }],
-              max_tokens: 1,
-              stream: false,
-            }),
+            body: JSON.stringify(buildChatCompletionPingBody(
+              getApiModelId(candidate.provider, candidate.model),
+              { stream: false },
+              { disableThinking: shouldUseDisabledThinkingForProvider(candidate.provider) }
+            )),
             signal: controller.signal,
           })
       const latencyMs = Math.round(performance.now() - started)

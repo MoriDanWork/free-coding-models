@@ -97,11 +97,14 @@ import {
 import { startWebServer, inspectExistingWebServer } from '../web/server.js'
 import { buildTelemetryProperties, sendUsageTelemetry } from '../src/telemetry.js'
 import {
+  formatBenchmarkLatency,
+  formatBenchmarkTps,
   formatBenchmarkResult,
   estimateTokensFromText,
   buildBenchmarkRequest,
   benchmarkModel,
 } from '../src/benchmark.js'
+import { buildChatCompletionPingBody, buildPingRequest, ping } from '../src/ping.js'
 
 // ─── Helper: create a mock model result ──────────────────────────────────────
 // 📖 Builds a minimal result object matching the shape used by the main script
@@ -222,6 +225,72 @@ async function withMockProvider(responder, fn) {
     await closeRouterTestServer(server)
   }
 }
+
+describe('buildPingRequest', () => {
+  it('adds disabled thinking to standard chat-completion ping payloads', () => {
+    const req = buildPingRequest('test-key', 'zai/glm-5.1-air', 'zai', 'https://example.test/v1/chat/completions')
+
+    assert.equal(req.body.model, 'glm-5.1-air')
+    assert.deepEqual(req.body.thinking, { type: 'disabled' })
+    assert.equal(req.body.max_tokens, 1)
+  })
+
+  it('adds disabled thinking to Cloudflare chat-completion ping payloads', () => {
+    const req = buildPingRequest('cf-key', '@cf/meta/llama', 'cloudflare', 'https://example.test/{account_id}/ai/v1/chat/completions')
+
+    assert.deepEqual(req.body.thinking, { type: 'disabled' })
+    assert.equal(req.body.messages[0].content, 'hi')
+  })
+
+  it('keeps Replicate prediction probes free of OpenAI-only thinking fields', () => {
+    const req = buildPingRequest('replicate-key', 'version-id', 'replicate', 'https://api.replicate.com/v1/predictions')
+
+    assert.equal(Object.hasOwn(req.body, 'thinking'), false)
+    assert.equal(req.body.input.prompt, 'hi')
+  })
+
+  it('allows router probes to add stream=false without losing disabled thinking', () => {
+    const body = buildChatCompletionPingBody('test/model', { stream: false })
+
+    assert.deepEqual(body.thinking, { type: 'disabled' })
+    assert.equal(body.stream, false)
+  })
+
+  it('can explicitly omit disabled thinking for strict provider fallbacks', () => {
+    const body = buildChatCompletionPingBody('test/model', { stream: false }, { disableThinking: false })
+
+    assert.equal(Object.hasOwn(body, 'thinking'), false)
+    assert.equal(body.stream, false)
+  })
+
+  it('retries once without thinking when a strict provider rejects that field', async () => {
+    const originalFetch = globalThis.fetch
+    const bodies = []
+    globalThis.fetch = async (_url, init) => {
+      bodies.push(JSON.parse(init.body))
+      if (bodies.length === 1) {
+        return new Response(JSON.stringify({ error: { message: 'Unknown field: thinking' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ id: 'chatcmpl-test', choices: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+
+    try {
+      const result = await ping('test-key', 'test/model', 'unit-thinking-fallback', 'https://example.test/v1/chat/completions')
+
+      assert.equal(result.code, '200')
+      assert.deepEqual(bodies[0].thinking, { type: 'disabled' })
+      assert.equal(Object.hasOwn(bodies[1], 'thinking'), false)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
 
 function buildRouterTestConfig(models, overrides = {}) {
   // 📖 Tests use real router normalization so timeout/circuit defaults match
@@ -1102,6 +1171,57 @@ describe('renderTable health labels', () => {
   })
 })
 
+describe('renderTable benchmark columns', () => {
+  it('renders AI Latency and TPS as separate columns', () => {
+    const results = [mockResult({
+      label: 'Bench model',
+      providerKey: 'nvidia',
+      pings: [{ ms: 200, code: '200' }],
+      totalTokens: 0,
+    })]
+    const output = stripAnsi(renderTable({
+      results,
+      pendingPings: 0,
+      frame: 0,
+      terminalRows: 12,
+      terminalCols: 220,
+      benchmarkResults: {
+        'nvidia/test/model': { ok: true, totalMs: 4300, outputTokens: 56, tokensPerSecond: 13 },
+      },
+    }))
+
+    assert.match(output, /AI Latency/)
+    assert.match(output, /TPS/)
+    assert.match(output, /4\.3s/)
+    assert.match(output, /\b13\b/)
+    assert.doesNotMatch(output, /4\.3s \/ 13 TPS/)
+  })
+
+  it('mirrors bad Health text in AI Latency and keeps TPS empty', () => {
+    const results = [mockResult({
+      label: 'Throttled model',
+      providerKey: 'nvidia',
+      status: 'down',
+      httpCode: '429',
+      pings: [{ ms: 0, code: '429' }],
+      totalTokens: 0,
+    })]
+    const output = stripAnsi(renderTable({
+      results,
+      pendingPings: 0,
+      frame: 0,
+      terminalRows: 12,
+      terminalCols: 220,
+      benchmarkResults: {
+        'nvidia/test/model': { ok: false, code: 'TIMEOUT', totalMs: 20_000 },
+      },
+    }))
+
+    assert.equal((output.match(/429 TRY LATER/g) || []).length, 2)
+    assert.doesNotMatch(output, /TIMEOUT/)
+  })
+})
+
 describe('renderTable sticky header and footer layout', () => {
   const makeManyResults = (count = 80) => Array.from({ length: count }, (_, idx) => mockResult({
     idx: idx + 1,
@@ -1230,9 +1350,9 @@ describe('renderTable responsive column visibility', () => {
   // 📖 Helper: render with a specific terminalCols value (all other params at sensible defaults)
   const renderAtWidth = (cols) => renderTable({ results: [mockResult({ providerKey: 'nvidia', totalTokens: 0, pings: [{ ms: 200, code: '200' }] })], sortColumn: 'avg', sortDirection: 'asc', pingInterval: 10_000, lastPingTime: Date.now(), mode: 'opencode', terminalRows: 30, terminalCols: cols, pingMode: 'normal', pingModeSource: 'auto', settingsUpdateState: 'idle', versionAlertsEnabled: false })
 
-  // 📖 Full row width = 169 cols (12 data cols + 11 separators + 2 margin)
-  // 📖 Compact mode (146 cols): wPing 14→9, wAvg 11→8, wStab 11→8, wSource 14→7, wStatus 18→13
-  // 📖 Hide Rank: <146 | Hide Uptime: <137 | Hide Tier: <128 | Hide Stability: <120
+  // 📖 Full row width = 198 cols after splitting AI Latency + TPS.
+  // 📖 Compact mode (170 cols): wPing 14→9, wAvg 11→8, wStab 11→8, wSource 14→7, wStatus/AI Latency 18→13.
+  // 📖 Width breakpoints are computed in renderTable() from the active columns.
 
   it('shows all columns and full labels at very wide terminal (200 cols)', () => {
     const output = renderAtWidth(200)
@@ -1245,20 +1365,24 @@ describe('renderTable responsive column visibility', () => {
     assert.match(output, /Avg Ping/)
     // 📖 Full provider header 'PrOviDer' visible
     assert.match(output, /Provider|PrOviDer/)
+    assert.match(output, /AI Latency/)
+    assert.match(output, /TPS/)
   })
 
   it('uses compact labels in compact mode (slightly narrow)', () => {
-    // 📖 At 164 cols, compact mode is active but no columns hidden yet
-    const output = renderAtWidth(164)
+    // 📖 At 175 cols, compact mode is active but no columns hidden yet
+    const output = renderAtWidth(175)
     assert.match(output, /Lat\. P/)
     assert.match(output, /Avg\. P/)
     assert.doesNotMatch(output, /Latest Ping/)
     assert.doesNotMatch(output, /Avg Ping/)
     // 📖 Provider header should be compact 'PrOD…'
     assert.match(output, /PrOD…/)
-    // 📖 All optional columns still visible (Rank + Answer Speed)
+    // 📖 All optional columns still visible (Rank + AI Latency/TPS)
     assert.match(output, /Rank/)
     assert.match(output, /Up%/)
+    assert.match(output, /AI Lat\./)
+    assert.match(output, /TPS/)
   })
 
   it('hides Rank column first when too narrow for compact', () => {
@@ -1271,7 +1395,7 @@ describe('renderTable responsive column visibility', () => {
   })
 
   it('hides Rank and Up% at narrower widths', () => {
-    // 📖 At 120 cols, Rank, Answer Speed, and Uptime hidden (127 minus Up% col+sep = 118)
+    // 📖 At 120 cols, Rank, AI Latency/TPS, and Uptime hidden.
     const output = renderAtWidth(120)
     assert.doesNotMatch(output, /Rank/)
     // 📖 Up% header is just 'Up%' — check it is NOT in the output
@@ -1280,7 +1404,7 @@ describe('renderTable responsive column visibility', () => {
   })
 
   it('hides Rank, Up%, and Tier at even narrower widths', () => {
-    // 📖 At 110 cols, Rank, Answer Speed, Uptime, and Tier hidden (118 minus Tier col+sep = 110)
+    // 📖 At 110 cols, Rank, AI Latency/TPS, Uptime, and Tier hidden.
     const output = renderAtWidth(110)
     assert.doesNotMatch(output, /Rank/)
     const lines = output.split('\n')
@@ -4222,8 +4346,13 @@ describe('COLUMN_SORT_MAP', () => {
     assert.equal(COLUMN_SORT_MAP.uptime, 'uptime')
   })
 
+  it('maps benchmark display columns to null because they are not sortable', () => {
+    assert.equal(COLUMN_SORT_MAP.aiLatency, null)
+    assert.equal(COLUMN_SORT_MAP.tps, null)
+  })
+
   it('has entries for all expected columns', () => {
-    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime']
+    const expected = ['rank', 'tier', 'swe', 'ctx', 'model', 'source', 'ping', 'avg', 'health', 'verdict', 'stability', 'uptime', 'aiLatency', 'tps']
     for (const col of expected) {
       assert.ok(col in COLUMN_SORT_MAP, `missing column: ${col}`)
     }
@@ -4479,36 +4608,46 @@ describe('sync-set', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
   // 📖 BENCHMARK MODULE
   // ═══════════════════════════════════════════════════════════════════════════════
-  describe('formatBenchmarkResult', () => {
-    it('formats 4300ms + 56 tokens as "4.3s / 13 TPS"', () => {
+  describe('benchmark display formatters', () => {
+    it('splits 4300ms + 56 tokens into AI Latency and TPS values', () => {
       const result = { ok: true, totalMs: 4300, outputTokens: 56, tokensPerSecond: 13 }
-      assert.equal(formatBenchmarkResult(result), '4.3s / 13 TPS')
+      assert.equal(formatBenchmarkLatency(result), '4.3s')
+      assert.equal(formatBenchmarkTps(result), '13')
     })
 
     it('shows dash for empty state', () => {
-      assert.equal(formatBenchmarkResult(null), '—')
+      assert.equal(formatBenchmarkLatency(null), '—')
+      assert.equal(formatBenchmarkTps(null), '—')
     })
 
     it('shows spinner when running', () => {
-      const out = formatBenchmarkResult(null, { running: true, frame: 0 })
-      assert.equal(out, '⠋')
+      assert.equal(formatBenchmarkLatency(null, { running: true, frame: 0 }), '⠋')
+      assert.equal(formatBenchmarkTps(null, { running: true, frame: 0 }), '⠋')
     })
 
-    it('shows compact error code on failure', () => {
-      assert.equal(formatBenchmarkResult({ ok: false, code: 'TIMEOUT' }), 'TIMEOUT')
-      assert.equal(formatBenchmarkResult({ ok: false, code: '401' }), '401')
-      assert.equal(formatBenchmarkResult({ ok: false, code: '429' }), '429')
-      assert.equal(formatBenchmarkResult({ ok: false, code: 'ERR' }), 'ERR')
+    it('shows compact error code in latency and dash in TPS on failure', () => {
+      assert.equal(formatBenchmarkLatency({ ok: false, code: 'TIMEOUT' }), 'TIMEOUT')
+      assert.equal(formatBenchmarkLatency({ ok: false, code: '401' }), '401')
+      assert.equal(formatBenchmarkLatency({ ok: false, code: '429' }), '429')
+      assert.equal(formatBenchmarkLatency({ ok: false, code: 'ERR' }), 'ERR')
+      assert.equal(formatBenchmarkTps({ ok: false, code: 'TIMEOUT' }), '—')
     })
 
-    it('uses whole seconds when >= 10s', () => {
+    it('uses whole seconds when latency is >= 10s', () => {
       const result = { ok: true, totalMs: 12300, outputTokens: 100, tokensPerSecond: 8 }
-      assert.equal(formatBenchmarkResult(result), '12s / 8 TPS')
+      assert.equal(formatBenchmarkLatency(result), '12s')
+      assert.equal(formatBenchmarkTps(result), '8')
     })
 
     it('rounds TPS to integer', () => {
       const result = { ok: true, totalMs: 1000, outputTokens: 15, tokensPerSecond: 15.7 }
-      assert.equal(formatBenchmarkResult(result), '1.0s / 16 TPS')
+      assert.equal(formatBenchmarkLatency(result), '1.0s')
+      assert.equal(formatBenchmarkTps(result), '16')
+    })
+
+    it('keeps legacy combined formatter available', () => {
+      const result = { ok: true, totalMs: 4300, outputTokens: 56, tokensPerSecond: 13 }
+      assert.equal(formatBenchmarkResult(result), '4.3s / 13 TPS')
     })
   })
 
@@ -4560,7 +4699,8 @@ describe('sync-set', () => {
       assert.equal(req.headers.Authorization, 'Bearer sk-test')
       assert.equal(req.body.model, 'gpt-4')
       assert.equal(req.body.temperature, 0)
-      assert.equal(req.body.max_tokens, 32)
+      assert.equal(req.body.max_tokens, 140)
+      assert.match(req.body.messages[0].content, /one cohesive paragraph of 80 to 100 words/i)
       assert.ok(Array.isArray(req.body.messages))
     })
 
@@ -4574,7 +4714,8 @@ describe('sync-set', () => {
       assert.equal(req.url, 'https://api.replicate.com/v1/predictions')
       assert.equal(req.headers.Authorization, 'Token token')
       assert.equal(req.body.version, 'version123')
-      assert.equal(req.body.input.max_tokens, 32)
+      assert.equal(req.body.input.max_tokens, 140)
+      assert.match(req.body.input.prompt, /one cohesive paragraph of 80 to 100 words/i)
     })
 
     it('builds cloudflare request with account id resolution', () => {

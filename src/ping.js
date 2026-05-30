@@ -16,6 +16,9 @@
  *
  *   → Functions:
  *   - `resolveCloudflareUrl`: Resolve {account_id} placeholder from CLOUDFLARE_ACCOUNT_ID env var
+ *   - `buildChatCompletionPingBody`: Build minimal chat-completion probe payloads with thinking disabled
+ *   - `markDisabledThinkingUnsupported`: Cache strict providers that reject the optional thinking control
+ *   - `shouldUseDisabledThinkingForProvider`: Decide whether a provider should receive disabled-thinking probes
  *   - `buildPingRequest`: Build provider-specific HTTP request for pinging
  *   - `ping`: Send async ping request with timeout; returns { code, ms, quotaPercent }
  *   - `getHeaderValue`: Helper to extract header value from Headers object or plain object
@@ -41,6 +44,9 @@ import { PING_TIMEOUT } from './constants.js'
 import { fetchProviderQuota as _fetchProviderQuotaFromModule } from './provider-quota-fetchers.js'
 import { supportsUsagePercent } from './quota-capabilities.js'
 
+const DISABLED_THINKING_RETRY_STATUSES = new Set([400, 422])
+const disabledThinkingUnsupportedProviders = new Set()
+
 // 📖 resolveCloudflareUrl: Cloudflare's OpenAI-compatible endpoint is account-scoped.
 // 📖 We resolve {account_id} from env so provider setup can stay simple in config.
 export function resolveCloudflareUrl(url) {
@@ -50,10 +56,37 @@ export function resolveCloudflareUrl(url) {
   return url.replace('{account_id}', encodeURIComponent(accountId))
 }
 
+// 📖 buildChatCompletionPingBody: Use the smallest useful chat-completion probe.
+// 📖 The explicit thinking toggle prevents reasoning-capable endpoints from spending
+// 📖 hidden tokens or adding thinking latency when we only need availability + RTT.
+export function buildChatCompletionPingBody(modelId, overrides = {}, options = {}) {
+  const body = {
+    model: modelId,
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 1,
+    thinking: { type: 'disabled' },
+    ...overrides,
+  }
+  if (options.disableThinking === false) delete body.thinking
+  return body
+}
+
+// 📖 markDisabledThinkingUnsupported: remember strict providers that reject the
+// 📖 optional `thinking` field so future pings avoid repeated 400/422 retries.
+export function markDisabledThinkingUnsupported(providerKey) {
+  if (providerKey) disabledThinkingUnsupportedProviders.add(providerKey)
+}
+
+// 📖 shouldUseDisabledThinkingForProvider: central policy for OpenAI-compatible
+// 📖 probes, shared by regular pings and router health probes.
+export function shouldUseDisabledThinkingForProvider(providerKey) {
+  return !disabledThinkingUnsupportedProviders.has(providerKey)
+}
+
 // 📖 buildPingRequest: Build provider-specific ping request.
 // 📖 Handles Replicate's /v1/predictions format, Cloudflare's account_id in URL,
 // 📖 and standard OpenAI-compliant chat completions with provider-specific headers.
-export function buildPingRequest(apiKey, modelId, providerKey, url) {
+export function buildPingRequest(apiKey, modelId, providerKey, url, options = {}) {
   // 📖 ZAI models are stored as "zai/glm-..." in sources.js but the API expects just "glm-..."
   const apiModelId = providerKey === 'zai' ? modelId.replace(/^zai\//, '') : modelId
 
@@ -75,7 +108,9 @@ export function buildPingRequest(apiKey, modelId, providerKey, url) {
     return {
       url: resolveCloudflareUrl(url),
       headers,
-      body: { model: apiModelId, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 },
+      body: buildChatCompletionPingBody(apiModelId, {}, {
+        disableThinking: options.disableThinking ?? shouldUseDisabledThinkingForProvider(providerKey),
+      }),
     }
   }
 
@@ -90,7 +125,31 @@ export function buildPingRequest(apiKey, modelId, providerKey, url) {
   return {
     url,
     headers,
-    body: { model: apiModelId, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 },
+    body: buildChatCompletionPingBody(apiModelId, {}, {
+      disableThinking: options.disableThinking ?? shouldUseDisabledThinkingForProvider(providerKey),
+    }),
+  }
+}
+
+// 📖 sendPingFetch: keep retry code tiny and ensure both attempts use the same abort signal.
+async function sendPingFetch(req, signal) {
+  return fetch(req.url, {
+    method: 'POST', signal,
+    headers: req.headers,
+    body: JSON.stringify(req.body),
+  })
+}
+
+// 📖 isDisabledThinkingRejected: strict OpenAI-compatible gateways may reject
+// 📖 unknown root fields. We only retry when the status and error text names
+// 📖 the optional `thinking` control, avoiding retries for real model failures.
+async function isDisabledThinkingRejected(resp, req) {
+  if (!req?.body?.thinking || !DISABLED_THINKING_RETRY_STATUSES.has(resp.status)) return false
+  try {
+    const text = await resp.clone().text()
+    return /thinking/i.test(text)
+  } catch {
+    return false
   }
 }
 
@@ -104,12 +163,13 @@ export async function ping(apiKey, modelId, providerKey, url) {
   const timer = setTimeout(() => ctrl.abort(), PING_TIMEOUT)
   const t0    = performance.now()
   try {
-    const req = buildPingRequest(apiKey, modelId, providerKey, url)
-    const resp = await fetch(req.url, {
-      method: 'POST', signal: ctrl.signal,
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-    })
+    let req = buildPingRequest(apiKey, modelId, providerKey, url)
+    let resp = await sendPingFetch(req, ctrl.signal)
+    if (await isDisabledThinkingRejected(resp, req)) {
+      markDisabledThinkingUnsupported(providerKey)
+      req = buildPingRequest(apiKey, modelId, providerKey, url, { disableThinking: false })
+      resp = await sendPingFetch(req, ctrl.signal)
+    }
     // 📖 Normalize all HTTP 2xx statuses to "200" so existing verdict/avg logic still works.
     const code = resp.status >= 200 && resp.status < 300 ? '200' : String(resp.status)
     return {

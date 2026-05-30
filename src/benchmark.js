@@ -18,25 +18,27 @@
  *   → Functions:
  *   - `buildBenchmarkRequest`: Build provider-specific benchmark request
  *   - `benchmarkModel`: Run a single benchmark and return timing + token metrics
- *   - `formatBenchmarkResult`: Format a benchmark result for the TUI column
+ *   - `formatBenchmarkLatency`: Format benchmark latency for the AI Latency TUI column
+ *   - `formatBenchmarkTps`: Format benchmark throughput for the TPS TUI column
+ *   - `formatBenchmarkResult`: Legacy combined formatter for compatibility
  *   - `estimateTokensFromText`: Fallback token estimator (clearly labeled)
  *
  *   📦 Dependencies:
  *   - ./ping.js: buildPingRequest, resolveCloudflareUrl
  *
  *   @see {@link ./ping.js} Provider-specific request building
- *   @see {@link ./render-table.js} Answer Speed column rendering
+ *   @see {@link ./render-table.js} AI Latency + TPS column rendering
  */
 
 import { buildPingRequest, resolveCloudflareUrl } from './ping.js'
 
-// 📖 BENCHMARK_PROMPT: A short, unambiguous question that any model can answer.
-// 📖 Constrained to one sentence to keep benchmarks fast and consistent.
-export const BENCHMARK_PROMPT = 'Why is the sky blue? Answer in exactly one short sentence.'
+// 📖 BENCHMARK_PROMPT: A deterministic one-paragraph task that any model can answer.
+// 📖 The longer target gives latency + TPS measurements enough generated tokens to be reliable.
+export const BENCHMARK_PROMPT = 'Why is the sky blue? Answer in exactly one cohesive paragraph of 80 to 100 words. Do not use bullet points, headings, or multiple paragraphs.'
 
-// 📖 BENCHMARK_MAX_TOKENS: Hard cap on generation length to prevent slow models
-// 📖 from producing essays and skewing the TPS calculation.
-export const BENCHMARK_MAX_TOKENS = 32
+// 📖 BENCHMARK_MAX_TOKENS: Hard cap high enough for a real paragraph, but low enough
+// 📖 to avoid accidental essays when benchmarking many models at once.
+export const BENCHMARK_MAX_TOKENS = 140
 
 // 📖 BENCHMARK_TEMPERATURE: Zero temperature for deterministic, reproducible results.
 export const BENCHMARK_TEMPERATURE = 0
@@ -52,37 +54,41 @@ export function estimateTokensFromText(text) {
   return Math.ceil(text.length / 4)
 }
 
-// 📖 formatBenchmarkResult: Turn a raw benchmark result into a compact display string.
-// 📖 Handles all three states: empty, running, success, and error.
-// 📖
-// 📖 Success: "4.3s / 13 TPS"
-// 📖 Running: spinner (caller passes spinner char)
-// 📖 Error: compact error code like "ERR", "TIMEOUT", "401", "429"
-// 📖 Empty: "—"
-export function formatBenchmarkResult(result, { running = false, frame = 0 } = {}) {
-  if (running) {
-    const spinIdx = frame % 10
-    const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'][spinIdx]
-    return spinner
-  }
+// 📖 benchmarkSpinner: Shared tiny spinner for benchmark columns while a request runs.
+function benchmarkSpinner(frame) {
+  const spinIdx = frame % 10
+  return ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'][spinIdx]
+}
 
-  if (!result) {
-    return '—'
-  }
-
-  if (!result.ok) {
-    return result.code || 'ERR'
-  }
+// 📖 formatBenchmarkLatency: Turn a raw benchmark result into the AI Latency column value.
+// 📖 Success: "4.3s" / "12s". Error: compact error code. Empty: "—".
+export function formatBenchmarkLatency(result, { running = false, frame = 0 } = {}) {
+  if (running) return benchmarkSpinner(frame)
+  if (!result) return '—'
+  if (!result.ok) return result.code || 'ERR'
 
   const totalSeconds = result.totalMs / 1000
-  const secondsLabel = totalSeconds >= 10
+  return totalSeconds >= 10
     ? totalSeconds.toFixed(0) + 's'
     : totalSeconds.toFixed(1) + 's'
+}
 
-  const tps = result.tokensPerSecond ?? 0
-  const tpsLabel = Math.round(tps)
+// 📖 formatBenchmarkTps: Turn a raw benchmark result into the TPS column value.
+// 📖 Success is the rounded tokens/second number only because the header carries "TPS".
+// 📖 Errors and empty state stay as a dim dash in the table to avoid duplicating codes.
+export function formatBenchmarkTps(result, { running = false, frame = 0 } = {}) {
+  if (running) return benchmarkSpinner(frame)
+  if (!result || !result.ok) return '—'
+  return String(Math.round(result.tokensPerSecond ?? 0))
+}
 
-  return `${secondsLabel} / ${tpsLabel} TPS`
+// 📖 formatBenchmarkResult: legacy combined formatter retained for integrations/tests
+// 📖 that still expect the old single-column "latency / TPS" string.
+export function formatBenchmarkResult(result, options = {}) {
+  if (options.running) return benchmarkSpinner(options.frame ?? 0)
+  if (!result) return '—'
+  if (!result.ok) return result.code || 'ERR'
+  return `${formatBenchmarkLatency(result)} / ${formatBenchmarkTps(result)} TPS`
 }
 
 // 📖 buildBenchmarkRequest: Build provider-specific benchmark request.

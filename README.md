@@ -456,6 +456,7 @@ When a tool mode is active (via `Z`), models incompatible with that tool are hig
 ## ✨ Features
 
 - **Parallel pings** — all ~165 API/Zen-callable models tested simultaneously via native `fetch` (~170 total cataloged models including CLI-only Gemini rows)
+- **AI benchmark columns** — `Ctrl+A` benchmarks the selected model, `Ctrl+U` benchmarks visible models, and results split cleanly into **AI Latency** plus **TPS**.
 - **Adaptive monitoring** — 2s burst for 60s → 10s normal → 30s idle
 - **Stability score** — composite 0–100 (p95 latency, jitter, spike rate, uptime)
 - **Smart ranking** — top 3 highlighted 🥇🥈🥉

@@ -49,7 +49,7 @@ import { themeColors, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme }
 import { TIER_COLOR } from './tier-colors.js'
 import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo } from './utils.js'
 import { usagePlaceholderForProvider } from './ping.js'
-import { formatBenchmarkResult } from './benchmark.js'
+import { formatBenchmarkLatency, formatBenchmarkTps } from './benchmark.js'
 import { calculateViewport, sortResultsWithPinnedFavorites, padEndDisplay, displayWidth, stripAnsi } from './render-helpers.js'
 import { getToolMeta, TOOL_METADATA, TOOL_MODE_ORDER, isModelCompatibleWithTool } from './tool-metadata.js'
 import { getColumnSpacing } from './ui-config.js'
@@ -91,6 +91,8 @@ const COLUMN_SORT_MAP = {
   verdict: 'verdict',
   stability: 'stability',
   uptime: 'uptime',
+  aiLatency: null,
+  tps: null,
 }
 export { COLUMN_SORT_MAP }
 
@@ -277,7 +279,8 @@ export function renderTable({
   const W_STATUS = 18
   const W_VERDICT = 14
   const W_UPTIME = 6
-  const W_ANSWER = 14
+  const W_AI_LATENCY = 18
+  const W_TPS = 5
 
   // const W_TOKENS = 7 // Used column removed
   // const W_USAGE = 7 // Usage column removed
@@ -285,17 +288,18 @@ export function renderTable({
 
   // 📖 Responsive column visibility: progressively hide least-useful columns
   // 📖 and shorten header labels when terminal width is insufficient.
-  // 📖 Hiding order (least useful first): Rank → Answer Speed → Up% → Tier → Stability
+  // 📖 Hiding order (least useful first): Rank → AI Latency/TPS → Up% → Tier → Stability
   // 📖 Compact mode shrinks: Latest Ping→Lat. P (9), Avg Ping→Avg. P (8),
   // 📖 Stability→StaB. (8), Provider→4chars+… (7), Health→6chars+… (13)
-  // 📖 Breakpoints: full=183 | compact=160 | -Rank=151 | -Answer=142 | -Up%=133 | -Tier=125 | -Stab=114
+  // 📖 Breakpoints are computed dynamically from active column widths.
   let wPing = 14
   let wAvg = 11
   let wStab = 11
   let wSource = W_SOURCE
   let wStatus = W_STATUS
+  let wAiLatency = W_AI_LATENCY
   let showRank = true
-  let showAnswerSpeed = true
+  let showBenchmarkColumns = true
   let showUptime = true
   let showTier = true
   let showStability = true
@@ -310,7 +314,7 @@ export function renderTable({
       cols.push(W_SWE, W_CTX, W_MODEL, wSource, wPing, wAvg, wStatus, W_VERDICT)
       if (showStability) cols.push(wStab)
       if (showUptime) cols.push(W_UPTIME)
-      if (showAnswerSpeed) cols.push(W_ANSWER)
+      if (showBenchmarkColumns) cols.push(wAiLatency, W_TPS)
       return ROW_MARGIN + cols.reduce((a, b) => a + b, 0) + (cols.length - 1) * SEP_W
     }
 
@@ -322,10 +326,11 @@ export function renderTable({
       wStab = 8      // 'StaB.' instead of 'Stability'
       wSource = 7    // Provider truncated to 4 chars + '…', 7 cols total
       wStatus = 13   // Health truncated after 6 chars + '…'
+      wAiLatency = 13 // Mirror compact Health text when health is not good
     }
     // 📖 Steps 2–6: Progressive column hiding (least useful first)
     if (calcWidth() > terminalCols) showRank = false
-    if (calcWidth() > terminalCols) showAnswerSpeed = false
+    if (calcWidth() > terminalCols) showBenchmarkColumns = false
     if (calcWidth() > terminalCols) showUptime = false
     if (calcWidth() > terminalCols) showTier = false
     if (calcWidth() > terminalCols) showStability = false
@@ -348,7 +353,10 @@ export function renderTable({
     colDefs.push({ name: 'verdict', width: W_VERDICT })
     if (showStability) colDefs.push({ name: 'stability', width: wStab })
     if (showUptime) colDefs.push({ name: 'uptime', width: W_UPTIME })
-    if (showAnswerSpeed) colDefs.push({ name: 'answerSpeed', width: W_ANSWER })
+    if (showBenchmarkColumns) {
+      colDefs.push({ name: 'aiLatency', width: wAiLatency })
+      colDefs.push({ name: 'tps', width: W_TPS })
+    }
     let x = ROW_MARGIN + 1 // 📖 1-based: first column starts after the 2-char left margin
     const columns = []
     for (let i = 0; i < colDefs.length; i++) {
@@ -475,11 +483,16 @@ export function renderTable({
     return themeColors.hotkey('U') + themeColors.dim('p%' + padding)
   })()
 
-  // 📖 Answer Speed header — renamed to AI Speed, no sort hotkey
-  const answerLabel = isCompact ? 'AI Sp.' : 'AI Speed'
-  const answerH_c = (() => {
-    const plain = answerLabel
-    const padding = ' '.repeat(Math.max(0, W_ANSWER - plain.length))
+  // 📖 Benchmark headers — split the old combined AI Speed field into latency + throughput.
+  const aiLatencyLabel = isCompact ? 'AI Lat.' : 'AI Latency'
+  const aiLatencyH_c = (() => {
+    const plain = aiLatencyLabel
+    const padding = ' '.repeat(Math.max(0, wAiLatency - plain.length))
+    return themeColors.dim(plain + padding)
+  })()
+  const tpsH_c = (() => {
+    const plain = 'TPS'
+    const padding = ' '.repeat(Math.max(0, W_TPS - plain.length))
     return themeColors.dim(plain + padding)
   })()
 
@@ -491,7 +504,7 @@ export function renderTable({
   headerParts.push(sweH_c, ctxH_c, modelH_c, originH_c, pingH_c, avgH_c, healthH_c, verdictH_c)
   if (showStability) headerParts.push(stabH_c)
   if (showUptime) headerParts.push(uptimeH_c)
-  if (showAnswerSpeed) headerParts.push(answerH_c)
+  if (showBenchmarkColumns) headerParts.push(aiLatencyH_c, tpsH_c)
   lines.push('  ' + headerParts.join(COL_SEP))
 
   // 📖 Mouse support: the column header row is the last line we just pushed.
@@ -793,24 +806,28 @@ export function renderTable({
     // (We keep the logic but do not render it.)
     const usageCell = ''
 
-    // 📖 Answer Speed column — show benchmark result, running spinner, or dash
+    // 📖 AI Latency + TPS columns — same benchmark result, split into two readable metrics.
     const benchmarkKey = `${r.providerKey}/${r.modelId}`
     const benchmarkResult = benchmarkResults[benchmarkKey]
     const isBenchmarkRunning = benchmarkRunning.has(benchmarkKey)
-    let answerSpeedCell
-    if (isBenchmarkRunning) {
-      const spinner = FRAMES[frame % FRAMES.length]
-      answerSpeedCell = themeColors.success(spinner.padEnd(W_ANSWER))
-    } else if (benchmarkResult) {
-      const text = formatBenchmarkResult(benchmarkResult)
-      // 📖 Colorize: success = green, error = red/dim
-      const isError = !benchmarkResult.ok
-      answerSpeedCell = isError
-        ? themeColors.metricBad(text.padEnd(W_ANSWER))
-        : themeColors.metricGood(text.padEnd(W_ANSWER))
-    } else {
-      answerSpeedCell = themeColors.dim('—'.padEnd(W_ANSWER))
-    }
+    const healthIsGood = r.status === 'up'
+    const latencyText = healthIsGood
+      ? formatBenchmarkLatency(benchmarkResult, { running: isBenchmarkRunning, frame })
+      : statusDisplayText
+    const tpsText = healthIsGood
+      ? formatBenchmarkTps(benchmarkResult, { running: isBenchmarkRunning, frame })
+      : '—'
+    const benchmarkIsError = healthIsGood && benchmarkResult && !benchmarkResult.ok
+    const latencyCell = !healthIsGood
+      ? statusColor(padEndDisplay(latencyText, wAiLatency))
+      : benchmarkIsError
+        ? themeColors.metricBad(latencyText.padEnd(wAiLatency))
+        : benchmarkResult || isBenchmarkRunning
+          ? themeColors.metricGood(latencyText.padEnd(wAiLatency))
+          : themeColors.dim(latencyText.padEnd(wAiLatency))
+    const tpsCell = healthIsGood && (benchmarkResult?.ok || isBenchmarkRunning)
+      ? themeColors.metricGood(tpsText.padEnd(W_TPS))
+      : themeColors.dim(tpsText.padEnd(W_TPS))
 
     // 📖 Build row: conditionally include columns based on responsive visibility
     const rowParts = []
@@ -819,7 +836,7 @@ export function renderTable({
     rowParts.push(sweCell, ctxCell, nameCell, sourceCell, pingCell, avgCell, status, speedCell)
     if (showStability) rowParts.push(stabCell)
     if (showUptime) rowParts.push(uptimeCell)
-    if (showAnswerSpeed) rowParts.push(answerSpeedCell)
+    if (showBenchmarkColumns) rowParts.push(latencyCell, tpsCell)
     const row = '  ' + rowParts.join(COL_SEP)
 
     if (isCursor) {
