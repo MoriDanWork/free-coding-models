@@ -1,5 +1,15 @@
 # Agent Instructions
 
+## Cross-Surface Compatibility Mandate
+
+> [!IMPORTANT]
+> Every single new feature, engine enhancement, bug fix, or catalog change **MUST** function perfectly across all three user-facing surfaces of the application:
+> 1. **CLI (TUI)**: Terminal command line mode.
+> 2. **Web Dashboard / Docker**: Daemon-served web interface on `localhost:19280`.
+> 3. **Desktop version (Tauri)**: System tray utility.
+>
+> If you add or modify logic in the shared core (`src/` or `sources.js`), you must ensure it does not break any surface, and that it is fully utilized by all three versions. Building a feature that only works on one surface while ignoring or breaking the others is strictly prohibited.
+
 ## Post-Feature Testing
 
 After completing any feature or fix, the agent MUST:

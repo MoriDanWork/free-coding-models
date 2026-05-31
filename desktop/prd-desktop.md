@@ -203,10 +203,13 @@ To prevent the background sidecar process from becoming an orphaned "zombie" pro
 
 ## 5. File Structure and Git Workflow
 
+The root `./docs/` directory serves as the **documentation source of truth** common to the entire project (CLI, Web, Desktop, and Backend). Any globally shared specs, filters, stable models, or integration documentation must reside in `./docs/`.
+
 The project retains its current structure and integrates the `desktop` folder at the root:
 
 ```text
 free-coding-models/ (Root)
+├── docs/                         # Common documentation - Source of Truth for CLI, Web, Desktop, Backend
 ├── sources.js                    # Absolute source of truth (shared)
 ├── src/                          # Shared core engine + CLI-specific modules
 │   ├── utils.js                  # Scoring, sorting, filtering, verdicts (shared)
