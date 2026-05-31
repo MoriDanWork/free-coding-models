@@ -4,6 +4,7 @@
  * 📖 Manages tier/status/provider/text filters + sort column/direction.
  * Supports all CLI columns: verdict, idx, tier, sweScore, ctx, label, origin,
  * latestPing, avg, condition (health), stability, uptime, aiLatency, tps.
+ * 📖 Default sort: avg asc, with null/Infinity values pushed to bottom.
  * → useFilter
  */
 import { useState, useMemo, useCallback } from 'react'
@@ -15,6 +16,7 @@ export function useFilter(models) {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterProvider, setFilterProvider] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  // ── Default sort: avg ascending, null/Infinity → bottom ──
   const [sortColumn, setSortColumn] = useState('avg')
   const [sortDirection, setSortDirection] = useState('asc')
 
@@ -72,7 +74,6 @@ export function useFilter(models) {
       } else if (col === 'ctx') {
         cmp = formatCtx(a.ctx) - formatCtx(b.ctx)
       } else if (col === 'latestPing') {
-        // 📖 Latest ping: get last successful ping from pingHistory/pings array
         const aPings = a.pingHistory || a.pings || []
         const bPings = b.pingHistory || b.pings || []
         const aLast = aPings.length > 0 ? aPings[aPings.length - 1] : null
@@ -81,9 +82,14 @@ export function useFilter(models) {
         const bMs = bLast?.ms ?? Infinity
         cmp = aMs - bMs
       } else if (col === 'avg') {
-        cmp = (a.avg === Infinity ? 99999 : a.avg) - (b.avg === Infinity ? 99999 : b.avg)
+        // Null / Infinity / >99000 → push to bottom regardless of direction
+        const aNo = a.avg == null || a.avg === Infinity || a.avg > 99000
+        const bNo = b.avg == null || b.avg === Infinity || b.avg > 99000
+        if (aNo && bNo) cmp = 0
+        else if (aNo) cmp = 1
+        else if (bNo) cmp = -1
+        else cmp = a.avg - b.avg
       } else if (col === 'condition') {
-        // 📖 Health: sort by status priority (up=0, timeout=1, down=2, pending=3, noauth=4, auth_error=5)
         const healthOrder = { up: 0, timeout: 1, down: 2, pending: 3, noauth: 4, auth_error: 5 }
         cmp = (healthOrder[a.status] ?? 9) - (healthOrder[b.status] ?? 9)
       } else if (col === 'verdict') {
@@ -93,16 +99,22 @@ export function useFilter(models) {
       } else if (col === 'uptime') {
         cmp = (a.uptime ?? 0) - (b.uptime ?? 0)
       } else if (col === 'aiLatency') {
-        // 📖 Benchmark latency from result.totalMs
-        const aMs = a.benchmark?.ok ? a.benchmark.totalMs : Infinity
-        const bMs = b.benchmark?.ok ? b.benchmark.totalMs : Infinity
-        cmp = aMs - bMs
+        // Null/Infinity → push to bottom regardless of direction
+        const aNo = !a.benchmark?.ok
+        const bNo = !b.benchmark?.ok
+        if (aNo && bNo) cmp = 0
+        else if (aNo) cmp = 1
+        else if (bNo) cmp = -1
+        else cmp = a.benchmark.totalMs - b.benchmark.totalMs
       } else if (col === 'tps') {
-        const aTps = a.benchmark?.ok ? (a.benchmark.tokensPerSecond ?? 0) : -1
-        const bTps = b.benchmark?.ok ? (b.benchmark.tokensPerSecond ?? 0) : -1
-        cmp = aTps - bTps
+        // Null → push to bottom regardless of direction
+        const aNo = !a.benchmark?.ok
+        const bNo = !b.benchmark?.ok
+        if (aNo && bNo) cmp = 0
+        else if (aNo) cmp = 1
+        else if (bNo) cmp = -1
+        else cmp = (a.benchmark.tokensPerSecond ?? 0) - (b.benchmark.tokensPerSecond ?? 0)
       } else {
-        // Default: avg
         cmp = (a.avg === Infinity ? 99999 : a.avg) - (b.avg === Infinity ? 99999 : b.avg)
       }
 

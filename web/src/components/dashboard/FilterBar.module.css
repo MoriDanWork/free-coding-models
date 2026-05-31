@@ -37,7 +37,92 @@
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--color-accent); animation: pulseDot 2s ease-in-out infinite;
 }
+
+/* ── Next ping countdown ── */
+.nextPing {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-family: var(--font-mono);
+}
+.nextPingLabel {
+  font-size: 11px; font-weight: 500; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.nextPingTime {
+  font-size: 14px; font-weight: 700; color: var(--color-text);
+  min-width: 32px;
+}
+.pingingDot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ff4466; animation: pulseDot 0.6s ease-in-out infinite;
+}
+.pingingText {
+  font-size: 12px; font-weight: 600; color: #ff4466;
+  font-family: var(--font-mono);
+}
+
 @keyframes pulseDot {
   0%, 100% { box-shadow: 0 0 0 0 var(--color-accent-glow); }
   50% { box-shadow: 0 0 0 6px transparent; }
+}
+
+/* ── Ping interval selector ── */
+.pingRow { display: flex; gap: 4px; }
+.pingBtn {
+  font-size: 12px; font-weight: 600; font-family: var(--font-mono);
+  padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text-muted); cursor: pointer; transition: all 150ms;
+  white-space: nowrap;
+}
+.pingBtn:hover { background: var(--color-bg-hover); color: var(--color-text); border-color: var(--color-text-muted); }
+.pingBtnActive {
+  background: var(--color-bg-hover) !important;
+  color: var(--ping-active-color, var(--color-accent)) !important;
+  border-color: var(--ping-active-color, var(--color-accent)) !important;
+  font-weight: 700;
+}
+
+/* ── Global benchmark progress bar (Ctrl+U) ── */
+.benchmarkBar {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(180, 0, 255, 0.12);
+  border: 1px solid rgba(180, 0, 255, 0.4);
+  border-radius: 8px;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+.benchmarkLabel {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700;
+  color: #b400ff; font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.benchmarkSpinner {
+  display: inline-block;
+  animation: spinSp 0.8s linear infinite;
+  font-size: 14px; line-height: 1;
+}
+.benchmarkCount {
+  font-size: 11px; opacity: 0.8;
+}
+.benchmarkTrack {
+  width: 120px; height: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px; overflow: hidden;
+}
+.benchmarkFill {
+  height: 100%;
+  background: linear-gradient(90deg, #b400ff, #ff00ff);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.benchmarkPct {
+  font-size: 12px; font-weight: 700;
+  color: #b400ff; font-family: var(--font-mono);
+  min-width: 36px; text-align: right;
+}
+
+@keyframes spinSp {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

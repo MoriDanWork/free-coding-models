@@ -23,6 +23,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exec } from 'node:child_process'
+import { Server } from 'socket.io'
 
 import { sources, MODELS } from '../sources.js'
 import { loadConfig, getApiKey, saveConfig, isProviderEnabled } from '../src/core/config.js'
@@ -31,6 +32,44 @@ import {
   getAvg, getVerdict, getUptime, getP95, getJitter,
   getStabilityScore, TIER_ORDER
 } from '../src/core/utils.js'
+import { benchmarkModel } from '../src/core/benchmark.js'
+
+// 📖 Benchmark constants (mirrors src/core/benchmark.js BENCHMARK_TIMEOUT_MS)
+const BENCHMARK_TIMEOUT_MS = 20_000
+
+// ─── Ping cadence (matches CLI src/tui/tui-state.js) ────────────────────────
+const PING_MODE_INTERVALS = { speed: 2000, normal: 10000, slow: 30000, forced: 4000 }
+const SPEED_MODE_DURATION_MS = 60_000
+const IDLE_SLOW_AFTER_MS = 5 * 60_000
+const PING_MODE_CYCLE = ['speed', 'normal', 'slow', 'forced']
+
+let pingMode = 'speed'
+let speedModeUntil = Date.now() + SPEED_MODE_DURATION_MS
+let lastUserActivity = Date.now()
+let activePingInterval = PING_MODE_INTERVALS.speed
+
+function refreshPingMode() {
+  const now = Date.now()
+  // Speed → normal fallback
+  if (pingMode === 'speed' && now >= speedModeUntil) {
+    pingMode = 'normal'
+    activePingInterval = PING_MODE_INTERVALS.normal
+  }
+  // Idle → slow
+  if (pingMode !== 'slow' && (now - lastUserActivity) >= IDLE_SLOW_AFTER_MS) {
+    pingMode = 'slow'
+    activePingInterval = PING_MODE_INTERVALS.slow
+  }
+}
+
+function noteUserActivity() { lastUserActivity = Date.now() }
+
+function cyclePingMode() {
+  const idx = PING_MODE_CYCLE.indexOf(pingMode)
+  pingMode = PING_MODE_CYCLE[(idx + 1) % PING_MODE_CYCLE.length]
+  activePingInterval = PING_MODE_INTERVALS[pingMode]
+  if (pingMode === 'speed') speedModeUntil = Date.now() + SPEED_MODE_DURATION_MS
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SERVER_SIGNATURE = 'free-coding-models-web'
@@ -57,18 +96,29 @@ const results = MODELS.map(([modelId, label, tier, sweScore, ctx, providerKey], 
   zenOnly: sources[providerKey]?.zenOnly || false,
 }))
 
-// SSE clients
-const sseClients = new Set()
+// ─── Benchmark state ───────────────────────────────────────────────────────────
+const benchmarkRunning = new Set()      // modelIds currently being benchmarked
+const benchmarkResults = new Map()        // modelId → benchmark result object
 
-// ─── Ping Loop ───────────────────────────────────────────────────────────────
-// Uses recursive setTimeout (not setInterval) to prevent overlapping rounds.
-// Each new round starts only after the previous one completes.
+// ─── Global benchmark state (Ctrl+U equivalent) ─────────────────────────────────
+let globalBenchmarkRunning = false
+let globalBenchmarkTotal = 0
+let globalBenchmarkCompleted = 0
+
+// ─── Socket.io clients ──────────────────────────────────────────────────────
+let io = null
+
+function broadcastUpdate() {
+  if (!io) return
+  io.emit('models:update', getModelsPayload())
+}
 
 let pingRound = 0
 let pingLoopRunning = false
+let nextPingAt = Date.now() + activePingInterval   // absolute timestamp of next ping
 
 async function pingAllModels() {
-  if (pingLoopRunning) return // guard against overlapping calls
+  if (pingLoopRunning) return
   pingLoopRunning = true
   pingRound++
   const batchSize = 30
@@ -108,24 +158,20 @@ async function pingAllModels() {
     await Promise.all(promises)
   }
 
-  // Broadcast update to all SSE clients
+  // Broadcast via Socket.IO
   broadcastUpdate()
   pingLoopRunning = false
 }
 
-function broadcastUpdate() {
-  const data = JSON.stringify(getModelsPayload())
-  for (const client of sseClients) {
-    try {
-      client.write(`data: ${data}\n\n`)
-    } catch {
-      sseClients.delete(client)
-    }
-  }
-}
-
 function getModelsPayload() {
-  return results.map(r => ({
+  return {
+    pingMode,
+    nextPingAt,
+    isPinging: pingLoopRunning,
+    globalBenchmarkRunning,
+    globalBenchmarkTotal,
+    globalBenchmarkCompleted,
+    models: results.map(r => ({
     idx: r.idx,
     modelId: r.modelId,
     label: r.label,
@@ -149,7 +195,9 @@ function getModelsPayload() {
     pingHistory: r.pings.slice(-20).map(p => ({ ms: p.ms, code: p.code })),
     pingCount: r.pings.length,
     hasApiKey: !!getApiKey(config, r.providerKey),
-  }))
+    isBenchmarking: benchmarkRunning.has(r.modelId),
+    benchmark: benchmarkResults.get(r.modelId) || null,
+  }))}   // ← closes models array + wrapper object
 }
 
 function getConfigPayload() {
@@ -252,6 +300,24 @@ function handleRequest(req, res) {
       serveDistFile(res, url.pathname)
       break
 
+    case '/api/ping-mode':
+      {
+        const url = new URL(req.url, `http://${req.headers.host}`)
+        const action = url.searchParams.get('action')
+        if (action === 'cycle') cyclePingMode()
+        else if (action === 'speed') { pingMode = 'speed'; speedModeUntil = Date.now() + SPEED_MODE_DURATION_MS; activePingInterval = PING_MODE_INTERVALS.speed }
+        else if (action === 'normal') { pingMode = 'normal'; activePingInterval = PING_MODE_INTERVALS.normal }
+        else if (action === 'slow') { pingMode = 'slow'; activePingInterval = PING_MODE_INTERVALS.slow }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ pingMode, interval: activePingInterval, nextPingAt }))
+      }
+      break
+
+    case '/api/ping-timer':
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ nextPingAt, isPinging: pingLoopRunning }))
+      break
+
     default:
       if (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
         serveDistFile(res, url.pathname)
@@ -265,8 +331,9 @@ function handleRequest(req, res) {
       }
 
     case '/api/models':
+      // Flat array for REST clients (legacy)
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(getModelsPayload()))
+      res.end(JSON.stringify(getModelsPayload().models))
       break
 
     case '/api/health':
@@ -280,15 +347,14 @@ function handleRequest(req, res) {
       break
 
     case '/api/events':
-      // SSE endpoint
+      // SSE kept for /api/events (backward compat)
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       })
       res.write(`data: ${JSON.stringify(getModelsPayload())}\n\n`)
-      sseClients.add(res)
-      req.on('close', () => sseClients.delete(res))
+      res.on('close', () => {})
       break
 
     case '/api/settings':
@@ -312,7 +378,9 @@ function handleRequest(req, res) {
             }
             // P2 fix: catch saveConfig failures and report to client
             try {
-              saveConfig(config)
+              // Save config → activity
+            noteUserActivity()
+            saveConfig(config)
             } catch (saveErr) {
               res.writeHead(500, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ success: false, error: 'Failed to save config: ' + saveErr.message }))
@@ -330,10 +398,172 @@ function handleRequest(req, res) {
         res.end('Method Not Allowed')
       }
       break
+
+    // ─── Benchmark a single model ───
+    case '/api/benchmark':
+      if (req.method === 'POST') {
+        let body = ''
+        req.on('data', chunk => body += chunk)
+        req.on('end', async () => {
+          try {
+            const { modelId, providerKey } = JSON.parse(body)
+            const model = results.find(r => r.modelId === modelId && r.providerKey === providerKey)
+            if (!model) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Model not found' }))
+              return
+            }
+            if (benchmarkRunning.has(modelId)) {
+              res.writeHead(409, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Benchmark already in progress for this model' }))
+              return
+            }
+            const apiKey = getApiKey(config, providerKey)
+            benchmarkRunning.add(modelId)
+            // Broadcast running state
+            broadcastUpdate()
+            try {
+              const result = await benchmarkModel({
+                apiKey,
+                modelId,
+                providerKey,
+                url: model.url,
+                timeoutMs: BENCHMARK_TIMEOUT_MS,
+              })
+              benchmarkResults.set(modelId, result)
+              broadcastUpdate()
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(result))
+            } finally {
+              benchmarkRunning.delete(modelId)
+              broadcastUpdate()
+            }
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: err.message }))
+          }
+        })
+      } else {
+        res.writeHead(405)
+        res.end('Method Not Allowed')
+      }
+      break
+
+    // ─── Global AI Speed Benchmark (Ctrl+U equivalent) ───
+    case '/api/global-benchmark':
+      {
+        // GET → return current status
+        if (req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            running: globalBenchmarkRunning,
+            total: globalBenchmarkTotal,
+            completed: globalBenchmarkCompleted,
+          }))
+          break
+        }
+        // POST → start global benchmark
+        if (req.method === 'POST') {
+          if (globalBenchmarkRunning) {
+            res.writeHead(409, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Global benchmark already running' }))
+            break
+          }
+          // Use health priority to sort: up first (fast), timeout/down last (slow)
+          const healthPriority = { up: 0, pending: 1, timeout: 2, noauth: 3, auth_error: 4, down: 5 }
+          const modelsToBenchmark = [...results]
+            .filter(r => !r.cliOnly && r.url)
+            .sort((a, b) => {
+              const hpA = healthPriority[a.status] ?? 6
+              const hpB = healthPriority[b.status] ?? 6
+              if (hpA !== hpB) return hpA - hpB
+              const pingA = typeof a.pings?.[a.pings.length - 1]?.ms === 'number' ? a.pings[a.pings.length - 1].ms : 99999
+              const pingB = typeof b.pings?.[b.pings.length - 1]?.ms === 'number' ? b.pings[b.pings.length - 1].ms : 99999
+              return pingA - pingB
+            })
+
+          globalBenchmarkRunning = true
+          globalBenchmarkTotal = modelsToBenchmark.length
+          globalBenchmarkCompleted = 0
+          broadcastUpdate()
+
+          const tasks = modelsToBenchmark.map(model => async () => {
+            const benchmarkKey = `${model.providerKey}/${model.modelId}`
+            if (benchmarkRunning.has(benchmarkKey)) {
+              globalBenchmarkCompleted++
+              broadcastUpdate()
+              return { skipped: true }
+            }
+            const apiKey = getApiKey(config, model.providerKey)
+            benchmarkRunning.add(benchmarkKey)
+            try {
+              const result = await benchmarkModel({
+                apiKey,
+                modelId: model.modelId,
+                providerKey: model.providerKey,
+                url: model.url,
+                timeoutMs: BENCHMARK_TIMEOUT_MS,
+              })
+              benchmarkResults.set(benchmarkKey, result)
+            } catch (err) {
+              benchmarkResults.set(benchmarkKey, {
+                ok: false,
+                code: 'ERR',
+                totalMs: 0,
+                error: err?.message || 'Benchmark failed',
+              })
+            } finally {
+              benchmarkRunning.delete(benchmarkKey)
+              globalBenchmarkCompleted++
+              broadcastUpdate()
+            }
+          })
+
+          // Run with concurrency=5 (same as TUI)
+          runWithConcurrency(tasks, 5).then(() => {
+            globalBenchmarkRunning = false
+            globalBenchmarkTotal = 0
+            globalBenchmarkCompleted = 0
+            broadcastUpdate()
+          })
+
+          res.writeHead(202, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ started: true, total: globalBenchmarkTotal }))
+          break
+        }
+
+        res.writeHead(405)
+        res.end('Method Not Allowed')
+        break
+      }
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function runWithConcurrency(tasks, concurrency) {
+  return new Promise((resolve) => {
+    let index = 0
+    let active = 0
+    let completed = 0
+    const total = tasks.length
+
+    function startNext() {
+      if (index >= total) return
+      const task = tasks[index++]
+      active++
+      task().then(() => {
+        active--
+        completed++
+        if (completed === total) resolve()
+        else startNext()
+      })
+      if (active < concurrency && index < total) startNext()
+    }
+
+    for (let i = 0; i < Math.min(concurrency, total); i++) startNext()
+  })
+}
 
 function checkPortInUse(port) {
   return new Promise((resolve) => {
@@ -415,6 +645,19 @@ export async function startWebServer(port = 3333, { open = true, startPingLoop =
   const url = `http://localhost:${resolvedPort}`
 
   const server = createServer(handleRequest)
+
+  // Attach Socket.IO to the HTTP server
+  io = new Server(server, {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST'],
+    },
+    transports: ['websocket', 'polling'],
+  })
+  io.on('connection', (socket) => {
+    // Send initial data immediately on connect
+    socket.emit('models:update', getModelsPayload())
+  })
   let pingLoopTimer = null
 
   server.listen(resolvedPort, () => {
@@ -430,8 +673,12 @@ export async function startWebServer(port = 3333, { open = true, startPingLoop =
 
   async function schedulePingLoop() {
     if (!server.listening) return
+    refreshPingMode()
+    noteUserActivity()
+    // Set nextPingAt BEFORE the ping so the UI sees the deadline immediately
+    nextPingAt = Date.now() + activePingInterval
     await pingAllModels()
-    pingLoopTimer = setTimeout(schedulePingLoop, 10_000)
+    pingLoopTimer = setTimeout(schedulePingLoop, activePingInterval)
   }
 
   if (startPingLoop) schedulePingLoop()

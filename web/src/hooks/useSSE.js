@@ -6,42 +6,66 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+const RECONNECT_DELAY = 2000
+
 export function useSSE(url = '/api/events') {
   const [models, setModels] = useState([])
   const [connected, setConnected] = useState(false)
   const [updateCount, setUpdateCount] = useState(0)
   const esRef = useRef(null)
-  const reconnectTimer = useRef(null)
+  const reconnectRef = useRef(null)
+  const mountedRef = useRef(true)
 
   const connect = useCallback(() => {
-    if (esRef.current) esRef.current.close()
+    if (!mountedRef.current) return
+
+    // Close existing connection
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
+
+    clearTimeout(reconnectRef.current)
 
     const es = new EventSource(url)
     esRef.current = es
 
-    es.onopen = () => setConnected(true)
+    es.onopen = () => {
+      if (mountedRef.current) setConnected(true)
+    }
+
     es.onmessage = (event) => {
+      if (!mountedRef.current) return
       try {
         const data = JSON.parse(event.data)
         setModels(data)
-        setUpdateCount((c) => c + 1)
+        setUpdateCount(c => c + 1)
       } catch (e) {
-        console.error('SSE parse error:', e)
+        console.warn('[useSSE] parse error:', e)
       }
     }
+
     es.onerror = () => {
       setConnected(false)
       es.close()
-      clearTimeout(reconnectTimer.current)
-      reconnectTimer.current = setTimeout(connect, 3000)
+      esRef.current = null
+
+      if (mountedRef.current) {
+        reconnectRef.current = setTimeout(() => {
+          if (mountedRef.current) connect()
+        }, RECONNECT_DELAY)
+      }
     }
   }, [url])
 
   useEffect(() => {
+    mountedRef.current = true
     connect()
+
     return () => {
+      mountedRef.current = false
+      clearTimeout(reconnectRef.current)
       esRef.current?.close()
-      clearTimeout(reconnectTimer.current)
     }
   }, [connect])
 

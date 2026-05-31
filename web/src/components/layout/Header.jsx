@@ -1,11 +1,16 @@
 /**
  * @file web/src/components/layout/Header.jsx
- * @description Top header bar with search, export button, settings shortcut, and theme toggle.
+ * @description Top header bar with search, AI Latency benchmark button, export, settings, and theme toggle.
+ * 📖 AI Latency button is always visible — benchmarks the fastest online model when no row is selected.
  */
-import { IconBolt, IconSearch, IconDownload, IconSettings, IconMoon, IconSun } from '@tabler/icons-react'
+import { IconBolt, IconSearch, IconDownload, IconSettings, IconMoon, IconSun, IconPlayerPlay } from '@tabler/icons-react'
 import styles from './Header.module.css'
 
-export default function Header({ searchQuery, onSearchChange, onToggleTheme, onOpenSettings, onOpenExport, theme }) {
+export default function Header({
+  searchQuery, onSearchChange,
+  onToggleTheme, onOpenSettings, onOpenExport,
+  onBenchmark, benchmarkRunning, modelsCount, theme,
+}) {
   return (
     <header className={styles.header}>
       <div className={styles.left}>
@@ -34,6 +39,24 @@ export default function Header({ searchQuery, onSearchChange, onToggleTheme, onO
         </div>
       </div>
       <div className={styles.right}>
+        {/* AI Latency Benchmark — always visible, shows model count when idle */}
+        <button
+          className={`${styles.benchmarkBtn} ${benchmarkRunning ? styles.benchmarkActive : ''}`}
+          onClick={onBenchmark}
+          disabled={benchmarkRunning}
+          title={benchmarkRunning ? 'AI Latency test running…' : `Run AI Latency benchmark on ${modelsCount} models`}
+        >
+          <IconPlayerPlay size={14} stroke={1.5} />
+          {benchmarkRunning ? (
+            <span className={styles.benchmarkRunning}>
+              <span className={styles.spinner} />
+              AI Latency Test…
+            </span>
+          ) : (
+            <span>AI Latency</span>
+          )}
+        </button>
+
         <button className={styles.iconBtn} onClick={onToggleTheme} title="Toggle theme">
           {theme === 'light' ? <IconMoon size={16} stroke={1.5} /> : <IconSun size={16} stroke={1.5} />}
         </button>
@@ -47,4 +70,3 @@ export default function Header({ searchQuery, onSearchChange, onToggleTheme, onO
     </header>
   )
 }
-

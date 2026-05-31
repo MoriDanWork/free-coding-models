@@ -12,4 +12,12 @@
 .medium { color: #ffaa00; }
 .slow   { color: #ff4444; }
 .dim    { color: var(--color-text-dim); }
+.running { color: var(--color-accent); }
 .badge  { color: #06b6d4; font-size: 10px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.webSpinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid rgba(0, 255, 136, 0.25); border-top-color: #00ff88;
+  border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
+}

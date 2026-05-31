@@ -79,6 +79,29 @@
 }
 .primaryBtn:hover { background: var(--color-accent-hover); }
 
+.benchmarkBtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; font-size: 12px; font-weight: 700;
+  border: 1px solid var(--color-border); border-radius: 6px;
+  background: var(--color-surface); color: var(--color-text);
+  cursor: pointer; font-family: var(--font-mono); transition: all 150ms;
+}
+.benchmarkBtn:hover {
+  border-color: #00ff88; color: #00ff88; background: rgba(0, 255, 136, 0.08);
+}
+.benchmarkActive {
+  border-color: #00ff88 !important; color: #00ff88 !important;
+  background: rgba(0, 255, 136, 0.12) !important;
+  cursor: not-allowed;
+}
+.benchmarkRunning { display: inline-flex; align-items: center; gap: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block; width: 10px; height: 10px;
+  border: 2px solid rgba(0, 255, 136, 0.3); border-top-color: #00ff88;
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+
 @media (max-width: 768px) {
   .center { display: none; }
 }
