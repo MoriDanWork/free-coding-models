@@ -222,12 +222,14 @@ free-coding-models/ (Root)
 │   ├── overlays.js               # ❌ CLI-only (TUI modals)
 │   └── ...                       # Other CLI-only modules
 ├── web/                          # React UI (shared between Web/Docker and Desktop)
+│   ├── README.md                 # Web-specific documentation
 │   ├── src/                      # React components, hooks, styles
 │   ├── dist/                     # Built assets (embedded by Docker + Tauri)
 │   └── index.html                # SPA entry point
 ├── bin/                          # CLI entry point
 │   └── free-coding-models.js     # CLI main (imports from src/)
 └── desktop/                      # Desktop-specific Tauri configuration
+    ├── README.md                 # Desktop-specific documentation
     ├── prd-desktop.md            # This document
     ├── tauri.conf.json           # Tauri v2 configuration
     ├── package.json              # Desktop build scripts
