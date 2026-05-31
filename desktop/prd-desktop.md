@@ -106,6 +106,11 @@ The original PRD proposed rewriting the engine in Rust (Axum + Reqwest). This ap
 
 > **Note:** The endpoint is `localhost:19280` (same as the existing `--daemon` mode), not `:4096`. This ensures a single consistent port across CLI daemon, Docker, and Desktop.
 
+* **Port Conflict Detection & Resolution:** 
+  * If the desktop app launches and port `19280` is already in use by a CLI/Docker daemon instance, the desktop app will **detect the running instance** via a quick `/api/ping` check.
+  * If the existing daemon is running the same API/version, the desktop app will **re-use the existing background daemon** and act as a visual front-end for it, rather than throwing an address-in-use error or spawning a duplicate sidecar.
+  * If the daemon is unresponsive or outdated, the desktop app will offer to restart the daemon on a fallback port range or terminate the conflicting CLI process (with user consent via notification prompt).
+
 ### 3.2. "Pre-Stream" Failover Mechanism
 
 * **Aggressive Timeout:** When targeting provider $A$, if the response time to get the first HTTP headers (Time to First Token - TTFT) exceeds the configured `requestTimeoutMs` (default: **15 seconds**) or returns a direct error (`429 Too Many Requests`, `503 Service Unavailable`), the proxy aborts the attempt.
@@ -159,23 +164,40 @@ These features are only available in the Desktop (Tauri) context, conditionally 
 | Component | Technology | Role / Justification |
 |-----------|------------|---------------------|
 | **App Framework** | **Tauri v2** | Ultra-lightweight (~15 MB) cross-platform standalone binary. Provides native tray, window, autostart, notifications, and global shortcuts. |
-| **Engine / Proxy** | **Node.js sidecar** | The existing `router-daemon.js` runs as a Tauri sidecar. Same code as CLI `--daemon` mode. Zero rewrite. |
-| **Sidecar Packaging** | **Node.js SEA** or **pkg** | The Node.js engine is compiled into a single executable binary bundled inside the Tauri app. No Node.js installation required for end users. |
+| **Engine / Proxy** | **Node.js sidecar** | The modularized Node.js engine sidecar. Same code as CLI `--daemon` mode. Zero rewrite. |
+| **Sidecar Packaging** | **Bun compile** (Primary) or **Node.js SEA** (Secondary) | The Node.js engine is compiled into a single executable binary bundled inside the Tauri app. **Bun compile** is the primary target due to its solid standalone binary generation, extremely fast startup, and native bundle compression. Node.js SEA serves as the secondary target. No platform Node.js installation is required. |
 | **Graphical Interface** | **React** (from `web/src/`) | Same React app used by Docker/Web dashboard. Loaded in Tauri's webview. |
 | **Communication** | **HTTP + SSE** | The webview communicates with the sidecar via `localhost:19280` — same API as the browser dashboard (`/api/models`, `/api/config`, `/api/events`, `/v1/chat/completions`). |
 | **Desktop-only features** | **Tauri Plugins** | `@tauri-apps/plugin-autostart`, `@tauri-apps/plugin-notification`, `@tauri-apps/plugin-global-shortcut`, `@tauri-apps/plugin-shell` |
 
-### Why Tauri + Node.js Sidecar (Not Electron)
+### Why Tauri + Node.js/Bun Sidecar (Not Electron)
 
-| Criteria | Tauri + Sidecar | Electron |
-|----------|----------------|----------|
+| Criteria | Tauri + Sidecar (Node/Bun) | Electron |
+|----------|----------------------------|----------|
 | Bundle size | ~15-25 MB | ~80-120 MB |
 | RAM idle | ~30-50 MB | ~80-120 MB |
 | Code sharing | Sidecar imports `core/` | Main process imports `core/` directly |
 | Dev complexity | Medium (sidecar setup) | Low (Node.js native) |
 | Native feel | Excellent (OS webview) | Good (Chromium) |
 
-Tauri is preferred for its smaller footprint, which matters for a tray utility that runs 24/7. If sidecar packaging proves too complex, Electron remains a valid fallback with even easier code sharing (direct `import`).
+Tauri + Bun/Node sidecar is preferred for its tiny footprint, which is essential for a tray utility that runs 24/7. If sidecar packaging via Bun/SEA proves too complex or fragile, Electron remains the designated fallback option since it offers direct ESM/Node.js imports without bundling steps.
+
+> [!WARNING]
+> **macOS Code Signing Risk (Bun Compile):** Bun-compiled binaries inject bytecode at the end of the executable, which can cause Apple's deep codesigning to fail or corrupt the signature. If codesigning issues arise in the CI/CD pipeline, **Node.js SEA (Single Executable Application)** should be promoted as the primary target since it utilizes standard Node.js injection structures compatible with Apple's signing requirements.
+
+### 4.1. Sidecar Lifecycle & Zombie Process Prevention
+
+To prevent the background sidecar process from becoming an orphaned "zombie" process running forever on port `19280` if the Tauri app crashes or is terminated abruptly, the following mechanisms are required:
+* **Parent-Death Binding:** In the Tauri Rust main process (`src-tauri/src/main.rs`), the sidecar process must be spawned in a way that links its life to the parent (e.g., standard OS pipe closure detection or explicit child process termination hooks).
+* **Heartbeat Check:** The Node.js/Bun sidecar should periodically verify the existence of the parent Tauri process via standard IPC or a lightweight port-based ping. If the parent process is no longer active, the sidecar must exit gracefully within 10 seconds.
+* **Spawn Ownership Lifecycle Tracking:** The Desktop app tracks how it connected to the daemon:
+  * **Daemon Owner (`isDaemonOwner = true`):** If the Desktop app spawned the sidecar daemon, it owns its lifecycle and will terminate the sidecar on exit.
+  * **Visual Front-End (`isDaemonOwner = false`):** If the Desktop app attached to an already running CLI or Docker daemon on port `19280`, it does *not* kill the process on exit, ensuring CLI processes are not interrupted mid-run.
+
+### 4.2. Pragmatic Security Model
+
+* **Loopback Binding Only:** The API routes and local proxy bind exclusively to the loopback interface (`127.0.0.1`). This naturally blocks remote machines on the local network from accessing the API or configuration.
+* **Pragmatic Simplicity:** Since the tool handles free-tier/limited AI keys and runs locally on the developer's machine (similar to standard CLI environment variables and local `.env` setups), heavy API gateways or complex cryptographic key exchanges are avoided to keep implementation simple and responsive.
 
 ---
 
@@ -218,6 +240,26 @@ free-coding-models/ (Root)
             └── main.rs           # App lifecycle, tray menu, sidecar management
 ```
 
+### 5.1. Sub-Project Documentation Mandates
+
+To ensure that the new sub-projects remain modular, maintainable, and easily understandable for new contributors, dedicated `README.md` files **must** be created inside the `/web` and `/desktop` directories. 
+
+#### 📦 Web Sub-Project (`/web/README.md`)
+The `web` directory holds the shared React dashboard UI. Its README must document:
+* **Architecture:** Explain that the single React SPA serves *both* the Docker/Web environment and the Tauri desktop webview.
+* **API Integration:** Document the SSE stream endpoints (`/api/events`) and configuration endpoints (`/api/config`, `/api/settings`) used to feed data into the UI.
+* **Development Flow:** Running Vite locally for UI-only changes (`pnpm dev` inside `/web`) and hot-reloading against a running daemon.
+* **Build Targets:** Compiling Vite static files into `web/dist/` for consumption by the router-daemon and Tauri app bundler.
+
+#### 🖥️ Desktop Sub-Project (`/desktop/README.md`)
+The `desktop` directory contains the Tauri wrapper config. Its README must document:
+* **Tauri v2 Shell:** Explain Tauri's role as a lightweight native tray app container.
+* **Sidecar Engine:** Detail how the modularized Node.js `router-daemon.js` is built via Bun Compile and packaged as a Tauri sidecar executable.
+* **Development Commands:** Launching the desktop app in dev mode (`pnpm tauri dev` or equivalent) with the JS engine sidecar running.
+* **Installer Building:** Specific instructions for generating release builds (`.dmg`, `.msi`, `.AppImage`) and handling platform signing keys.
+
+---
+
 ### Key Differences from Original PRD
 
 | Original PRD | New Architecture |
@@ -230,12 +272,19 @@ free-coding-models/ (Root)
 
 ### Sidecar Build Pipeline
 
-The Node.js sidecar is compiled into a standalone binary before Tauri packaging:
+The sidecar is compiled into a standalone binary before Tauri packaging using one of the following paths:
 
-1. **Bundle** — `esbuild` bundles the router daemon entry point + all `src/` and `sources.js` dependencies into a single `.js` file
-2. **Compile** — Node.js SEA (`node --experimental-sea-config`) or `pkg` compiles the bundle into a native binary (`fcm-engine-darwin-arm64`, `fcm-engine-win-x64.exe`, etc.)
-3. **Embed** — Tauri's `externalBin` configuration embeds the compiled binary as a sidecar
-4. **Runtime** — On app launch, Tauri spawns the sidecar which starts the router daemon on `:19280`
+#### Option A: Bun Compile (Primary)
+* **Compile** — `bun build --compile src/router-daemon.js --outfile binaries/fcm-engine`
+* **Why** — Bun compiles the entire dependency tree and its JS runtime into a single, highly compressed native binary. It has extremely fast cold starts and robust cross-platform support.
+
+#### Option B: Node.js SEA / pkg (Secondary)
+1. **Bundle** — `esbuild` bundles `src/router-daemon.js` + all `src/` and `sources.js` dependencies into a single self-contained `.js` file.
+2. **Compile** — Node.js SEA (`node --experimental-sea-config`) or `pkg` compiles the bundle into a native binary (`fcm-engine-darwin-arm64`, `fcm-engine-win-x64.exe`, etc.).
+
+#### Common Packaging & Runtime:
+* **Embed** — Tauri's `externalBin` configuration embeds the compiled binary as a sidecar.
+* **Runtime** — On app launch, Tauri spawns the sidecar which starts the router daemon on `:19280`.
 
 ```json
 // tauri.conf.json
@@ -287,17 +336,17 @@ The Node.js sidecar is compiled into a standalone binary before Tauri packaging:
 | `src/mouse.js` | 7 KB | Terminal mouse event parsing |
 | `src/tui-filters.js` | 6 KB | TUI filter cycling |
 | `src/tier-colors.js` | 2 KB | chalk color mappings |
+*(Key-handler, Overlays, Table rendering, TUI state, etc.)*
 
 ---
 
 ## 7. Performance Criteria & QA Verification
 
-* **Memory Consumption:** Sidecar + Tauri shell combined must stay under **80 MB** RAM at idle. Target: ~50 MB (30 MB sidecar + 20 MB Tauri webview).
-* **Routing Latency (Overhead):** The Node.js proxy must not add more than **5 ms** of latency compared to a direct network request to the API provider.
-* **Stream Responsiveness:** The UI monitoring chart must display ping variations with a maximum delay of **200 ms** relative to the actual probe result (SSE delivery from sidecar → React state update → render).
-* **Resilience:** By simulating a sudden network outage on the primary provider at the moment the agent sends a request, the application must reroute traffic and deliver the first token on the secondary provider in under **3.5 seconds**.
-* **Startup Time:** From app launch to router listening on `:19280` — under **3 seconds** on modern hardware.
-* **Parity:** The stability scores, verdicts, and model rankings displayed in the Desktop UI must be **byte-identical** to those produced by `free-coding-models --daemon` in the CLI. This is guaranteed by using the same code.
+* **Memory Consumption:** Sidecar + Tauri shell combined must stay under **80 MB** RAM at idle.
+* **Routing Latency (Overhead):** The Node.js proxy must not add more than **5 ms** of latency compared to a direct request.
+* **Resilience:** If the primary provider fails, the app must reroute to the secondary in under **3.5 seconds**.
+* **Startup Time:** From app launch to router listening on `:19280` — under **3 seconds**.
+* **Parity:** Stability scores and verdicts must be **byte-identical** to those produced by `free-coding-models --daemon` in the CLI.
 
 ---
 
@@ -307,14 +356,23 @@ The Node.js sidecar is compiled into a standalone binary before Tauri packaging:
 
 Before touching Desktop code, formalize the shared core:
 
-1. Create `core/index.js` barrel export that re-exports all shared modules
-2. Ensure `router-daemon.js` web API routes are clean and documented
-3. Verify `web/src/` React app works standalone with the daemon API
-4. Add integration tests: start daemon → hit API → verify React app renders
+1. Create `core/index.js` barrel export that re-exports all shared modules.
+2. Verify `web/src/` React app works standalone with the daemon API.
+3. Add integration tests: start daemon → hit API → verify React app renders.
+
+### Phase 1.5 — Modularization of `router-daemon.js` (Decoupling)
+
+To avoid a giant 92 KB "God Object" file that handles everything, we split `router-daemon.js` into clean, testable sub-modules under `src/daemon/`:
+
+1. **`src/daemon/proxy.js`**: Pure HTTP proxy engine handling request interception, the failover mechanism, and stream piping.
+2. **`src/daemon/server.js`**: Fastify/Express/HTTP server defining the `/api/*` endpoints and static file serving for `web/dist/`.
+3. **`src/daemon/sse.js`**: Server-Sent Events broadcaster logic for push notifications and live ping/health updates.
+4. **`src/daemon/token-tracker.js`**: Handles token estimation, consumption tracking, and provider quotas.
+5. **`src/daemon/circuit-breaker.js`**: Tracks provider health states and manages temporary/permanent circuit-breaking of unresponsive backends.
+6. **Verification**: Rewrite/adapt the unit and integration tests to ensure CLI daemon mode is unaffected. Keep `src/router-daemon.js` as a thin entry point wrapper.
 
 ### Phase 2 — Tauri Shell + Sidecar
 
-1. Set up `desktop/` Tauri v2 project with minimal `main.rs`
 2. Build Node.js sidecar from `router-daemon.js` entry point
 3. Configure `tauri.conf.json` with `externalBin` sidecar
 4. Webview loads `web/dist/` — verify dashboard renders
