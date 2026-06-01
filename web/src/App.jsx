@@ -12,6 +12,7 @@
  * 📖   - UpdateChip in header (polls /api/version, popover with "Update now" + "What's new")
  * 📖   - URL write-back (every filter / sort / view / palette / toolMode change
  * 📖     updates the URL via history.replaceState, debounced at 80ms)
+ * 📖   - M3 Web endpoint install flow: writes tool config only; never starts CLIs.
  * 📖   - New Settings rows: theme dropdown, favorites mode toggle, startup AI scan
  * 📖     toggle, shell-env toggle, legacy proxy cleanup button, open Changelog link,
  * 📖     update status row, per-provider test key button
@@ -23,6 +24,7 @@ import { useSocket } from './hooks/useSocket.js'
 import { useFilter } from './hooks/useFilter.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useFavorites } from './hooks/useFavorites.js'
+import { useToolMode } from './hooks/useToolMode.js'
 import { useUrlState } from './hooks/useUrlState.js'
 import { useUpdateChecker } from './hooks/useUpdateChecker.js'
 import Header from './components/layout/Header.jsx'
@@ -37,7 +39,10 @@ import CommandPalette from './components/palette/CommandPalette.jsx'
 import HelpView from './components/help/HelpView.jsx'
 import ChangelogView from './components/changelog/ChangelogView.jsx'
 import UpdateChip from './components/update/UpdateChip.jsx'
+import RecommendView from './components/recommend/RecommendView.jsx'
+import IncompatibleFallbackModal from './components/launch/IncompatibleFallbackModal.jsx'
 import ToastContainer from './components/atoms/ToastContainer.jsx'
+import { isModelCompatibleWithTool } from '../../src/core/tool-metadata.js'
 
 let toastIdCounter = 0
 
@@ -59,9 +64,23 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogDefaultVersion, setChangelogDefaultVersion] = useState(null)
-  const [toolMode, setToolMode] = useState(null) // 📖 M3 will use this; the row highlighter already keys off it
+  const [recommendOpen, setRecommendOpen] = useState(false)
+  const [incompatibleRequest, setIncompatibleRequest] = useState(null)
   const [toasts, setToasts] = useState([])
   const lastActivityRef = useRef(Date.now())
+
+  // ── Toast helpers ────────────────────────────────────────────────────────
+  const addToast = useCallback((message, type = 'info') => {
+    const id = ++toastIdCounter
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 4000)
+  }, [])
+
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
 
   const {
     filtered,
@@ -76,6 +95,8 @@ export default function App() {
     sortColumn, sortDirection, setSortColumn, setSortDirection, toggleSort,
     resetView,
   } = useFilter(models)
+
+  const { toolMode, setToolMode, cycleToolMode } = useToolMode({ onToast: addToast })
 
   // 📖 URL deep-linking (M2 = read + write). Hydrates on mount, then pushes
   // 📖 every change back via history.replaceState (debounced 80ms).
@@ -99,10 +120,47 @@ export default function App() {
   // 📖 Favorites — single source of truth shared with the TUI.
   const favorites = useFavorites({ models })
 
+  // ── M3 endpoint flow: compat guard → /api/install-endpoint → fallback modal ──
+  const handleInstallEndpoint = useCallback(async (model, overrideMode = null) => {
+    const mode = overrideMode || toolMode || 'opencode'
+    if (!model) return
+    if (!isModelCompatibleWithTool(model.providerKey, mode)) {
+      setIncompatibleRequest({ model, toolMode: mode })
+      return
+    }
+    try {
+      const resp = await fetch('/api/install-endpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerKey: model.providerKey, modelId: model.modelId, toolMode: mode }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (resp.status === 422 && payload.code === 'incompatible_model') {
+        setIncompatibleRequest({ model, toolMode: mode })
+        return
+      }
+      if (!resp.ok) throw new Error(payload.error || `HTTP ${resp.status}`)
+      addToast(`Endpoint installed for ${model.label} in ${mode}. Start the tool yourself.`, 'success')
+    } catch (err) {
+      addToast(`Endpoint install failed: ${err.message}`, 'error')
+    }
+  }, [addToast, toolMode])
+
+  const handleSwitchToolAndInstall = useCallback(async (mode, model) => {
+    await setToolMode(mode)
+    setIncompatibleRequest(null)
+    await handleInstallEndpoint(model, mode)
+  }, [handleInstallEndpoint, setToolMode])
+
+  const handlePinAndInstall = useCallback(async (model) => {
+    if (!favorites.isFavorite(model)) await favorites.toggle(model)
+    await handleInstallEndpoint(model)
+  }, [favorites, handleInstallEndpoint])
+
   // 📖 Update checker (5-minute poll). Returns `updateAvailable` for the chip.
   const {
     localVersion, latestVersion, updateAvailable, runUpdate, checkNow, error: updateError,
-  } = useUpdateChecker({ onToast: addToastInternal })
+  } = useUpdateChecker({ onToast: addToast })
 
   // 📖 Build the provider list for the FilterBar dropdown.
   const providers = useMemo(() => {
@@ -140,25 +198,12 @@ export default function App() {
       })
       if (!resp.ok && resp.status !== 202) {
         const err = await resp.json().catch(() => ({}))
-        addToastInternal?.(`Benchmark failed: ${err?.error || resp.statusText}`, 'error')
+        addToast(`Benchmark failed: ${err?.error || resp.statusText}`, 'error')
       }
     } catch (err) {
       console.error('[Benchmark] per-row failed:', err.message)
     }
-  }, [])
-
-  // ── Toast helpers ────────────────────────────────────────────────────────
-  function addToastInternal(message, type = 'info') {
-    const id = ++toastIdCounter
-    setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 4000)
-  }
-  const addToast = useCallback(addToastInternal, [])
-  const dismissToast = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }, [])
+  }, [addToast])
 
   // ── Selection / detail panel ─────────────────────────────────────────────
   const handleSelectModel = useCallback((model) => {
@@ -180,9 +225,9 @@ export default function App() {
     // 📖 toasts (M3/M4) — they don't switch the currentView.
     if (viewId === 'help') { setHelpOpen(true); return }
     if (viewId === 'changelog') { setChangelogOpen(true); setChangelogDefaultVersion(null); return }
-    if (viewId === 'recommend') { addToast?.('Smart Recommend arrives in M3', 'info'); return }
+    if (viewId === 'recommend') { setRecommendOpen(true); return }
     if (viewId === 'router') { addToast?.('Router dashboard arrives in M4', 'info'); return }
-    if (viewId === 'install-endpoints') { addToast?.('Install Endpoints arrives in M4', 'info'); return }
+    if (viewId === 'install-endpoints') { addToast?.('Use the plug button on any model row to install its endpoint.', 'info'); return }
     if (viewId === 'installed-models') { addToast?.('Installed Models arrives in M4', 'info'); return }
     setCurrentView(VIEW_TO_NAV[viewId] || viewId)
     lastActivityRef.current = Date.now()
@@ -192,8 +237,8 @@ export default function App() {
   const handleResetView = useCallback(() => {
     resetView()
     setSearchQuery('')
-    addToastInternal('View reset to defaults.', 'info')
-  }, [resetView, setSearchQuery])
+    addToast('View reset to defaults.', 'info')
+  }, [addToast, resetView, setSearchQuery])
 
   // ── Changelog open with optional version (e.g. from UpdateChip "What's new") ─
   const openChangelogAt = useCallback((version) => {
@@ -219,13 +264,22 @@ export default function App() {
         if (paletteOpen) { setPaletteOpen(false); return }
         if (helpOpen) { setHelpOpen(false); return }
         if (changelogOpen) { setChangelogOpen(false); return }
+        if (recommendOpen) { setRecommendOpen(false); return }
+        if (incompatibleRequest) { setIncompatibleRequest(null); return }
         if (selectedModel) { setSelectedModel(null); return }
         if (exportOpen) { setExportOpen(false); return }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [paletteOpen, helpOpen, changelogOpen, selectedModel, exportOpen])
+  }, [paletteOpen, helpOpen, changelogOpen, recommendOpen, incompatibleRequest, selectedModel, exportOpen])
+
+  useEffect(() => {
+    if (currentView === 'recommend') {
+      setRecommendOpen(true)
+      setCurrentView('dashboard')
+    }
+  }, [currentView])
 
   return (
     <>
@@ -245,6 +299,9 @@ export default function App() {
           modelsCount={filtered.length}
           theme={theme}
           onToast={addToast}
+          toolMode={toolMode}
+          onSetToolMode={setToolMode}
+          onCycleToolMode={cycleToolMode}
           updateSlot={
             <UpdateChip
               updateAvailable={updateAvailable}
@@ -283,11 +340,13 @@ export default function App() {
                 globalBenchmarkRunning={globalBenchmarkRunning}
                 globalBenchmarkTotal={globalBenchmarkTotal}
                 globalBenchmarkCompleted={globalBenchmarkCompleted}
+                toolMode={toolMode}
               />
               <ModelTable
                 filtered={filtered}
                 onSelectModel={handleSelectModel}
                 onBenchmarkRow={handleBenchmarkRow}
+                onLaunch={handleInstallEndpoint}
                 favorites={favorites}
                 sortColumn={sortColumn}
                 sortDirection={sortDirection}
@@ -322,6 +381,12 @@ export default function App() {
         onClose={handleCloseDetail}
         favorites={favorites}
         onBenchmark={handleBenchmarkRow}
+        onLaunch={handleInstallEndpoint}
+        toolMode={toolMode}
+        onSetToolMode={setToolMode}
+        onCycleToolMode={cycleToolMode}
+        models={models}
+        onOpenFallback={(model) => setIncompatibleRequest({ model, toolMode })}
         onToast={addToast}
       />
 
@@ -351,6 +416,30 @@ export default function App() {
           updateAvailable={updateAvailable}
           latestVersion={latestVersion}
           onToast={addToast}
+        />
+      )}
+
+      {recommendOpen && (
+        <RecommendView
+          onClose={() => setRecommendOpen(false)}
+          toolMode={toolMode}
+          onLaunch={handleInstallEndpoint}
+          onPinAndLaunch={handlePinAndInstall}
+          onToast={addToast}
+        />
+      )}
+
+      {incompatibleRequest && (
+        <IncompatibleFallbackModal
+          request={incompatibleRequest}
+          models={models}
+          onClose={() => setIncompatibleRequest(null)}
+          onSwitchToolLaunch={handleSwitchToolAndInstall}
+          onLaunchSimilar={(candidate) => {
+            setIncompatibleRequest(null)
+            const model = models.find((m) => m.providerKey === candidate.providerKey && m.modelId === candidate.modelId) || candidate
+            void handleInstallEndpoint(model)
+          }}
         />
       )}
 

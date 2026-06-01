@@ -46,6 +46,15 @@ import {
   getStabilityScore,
 } from '../src/core/utils.js'
 import { benchmarkModel, BENCHMARK_TIMEOUT_MS } from '../src/core/benchmark.js'
+import { getInstallTargetModes, installProviderEndpoints } from '../src/core/endpoint-installer.js'
+import { isModelCompatibleWithTool } from '../src/core/tool-metadata.js'
+import { sendUsageTelemetry } from '../src/core/telemetry.js'
+import {
+  TASK_TYPES,
+  PRIORITY_TYPES,
+  CONTEXT_BUDGETS,
+  getTopRecommendations,
+} from '../src/core/utils.js'
 import {
   PING_MODE_INTERVALS,
   PING_MODE_CYCLE,
@@ -511,6 +520,89 @@ function runWithConcurrency(tasks, concurrency) {
   })
 }
 
+const TOOL_MODE_ORDER = getInstallTargetModes()
+const TOOL_MODES = new Set(TOOL_MODE_ORDER)
+
+function normalizeToolMode(mode) {
+  return typeof mode === 'string' && TOOL_MODES.has(mode) ? mode : 'opencode'
+}
+
+function getPreferredToolMode() {
+  return normalizeToolMode(config.settings?.preferredToolMode)
+}
+
+function persistPreferredToolMode(mode) {
+  const normalized = normalizeToolMode(mode)
+  if (!config.settings || typeof config.settings !== 'object') config.settings = {}
+  config.settings.preferredToolMode = normalized
+  const saveResult = saveConfig(config)
+  return { mode: normalized, saveResult }
+}
+
+function getEndpointModel(providerKey, modelId) {
+  const result = getResult(providerKey, modelId)
+  if (!result) return null
+  return {
+    providerKey: result.providerKey,
+    modelId: result.modelId,
+    label: result.label,
+    tier: result.tier,
+    sweScore: result.sweScore,
+    ctx: result.ctx,
+    status: result.status,
+  }
+}
+
+async function readDaemonPort() {
+  try {
+    const raw = readFileSync(`${process.env.HOME}/.free-coding-models-daemon.port`, 'utf8').trim()
+    if (/^\d+$/.test(raw)) return Number(raw)
+  } catch {}
+  return null
+}
+
+async function syncFavoritesToRouter(selected) {
+  if (config?.router?.enabled !== true) return
+  const selKey = `${selected.providerKey}/${selected.modelId}`
+  const favorites = Array.isArray(config.favorites) ? config.favorites : []
+  const chain = [selKey, ...favorites.filter((entry) => entry !== selKey)]
+  const models = chain.map((entry, index) => {
+    const slashIdx = entry.indexOf('/')
+    const provider = slashIdx >= 0 ? entry.slice(0, slashIdx) : '?'
+    const model = slashIdx >= 0 ? entry.slice(slashIdx + 1) : entry
+    return { provider, model, priority: index + 1 }
+  })
+  try {
+    const port = await readDaemonPort()
+    if (!port) return
+    const baseUrl = `http://127.0.0.1:${port}`
+    const setPayload = { name: 'fast-coding', models, created: new Date().toISOString() }
+    await fetch(`${baseUrl}/sets/fast-coding`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(setPayload),
+    })
+    await fetch(`${baseUrl}/sets/fast-coding/activate`, { method: 'POST' })
+  } catch {}
+}
+
+async function installEndpointForMode(mode, model) {
+  return installProviderEndpoints(config, model.providerKey, mode, {
+    scope: 'selected',
+    modelIds: [model.modelId],
+  })
+}
+
+function buildRecommendReason(result, answers) {
+  const bits = []
+  if (result.tier) bits.push(`${result.tier} tier`)
+  if (result.sweScore && result.sweScore !== '—') bits.push(`${result.sweScore} SWE`)
+  if (result.ctx) bits.push(`${result.ctx} context`)
+  if (result.status === 'up') bits.push('currently up')
+  const priority = PRIORITY_TYPES[answers.priority]?.label || 'balanced'
+  return `${bits.join(' · ') || 'Strong catalog fit'} for ${priority.toLowerCase()} priority.`
+}
+
 async function handleRequest(req, res) {
   res.setHeader('X-FCM-Server', SERVER_SIGNATURE)
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -627,6 +719,110 @@ async function handleRequest(req, res) {
       case '/api/config':
         sendJson(res, 200, getConfigPayload())
         return
+
+      // ── M3: shared tool mode — same preferredToolMode setting as the TUI Z cycle ──
+      case '/api/tool-mode': {
+        if (req.method === 'GET') {
+          sendJson(res, 200, { mode: getPreferredToolMode(), tools: TOOL_MODE_ORDER })
+          return
+        }
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        if (!TOOL_MODES.has(body?.mode)) { sendJson(res, 422, { error: 'Invalid tool mode' }); return }
+        const { mode, saveResult } = persistPreferredToolMode(body.mode)
+        if (!saveResult.success) { sendJson(res, 500, { error: saveResult.error || 'Failed to save tool mode' }); return }
+        noteUserActivity()
+        sendJson(res, 200, { mode })
+        return
+      }
+
+      // ── M3: install selected model endpoint into a tool config, no process spawn ──
+      case '/api/install-endpoint':
+      case '/api/launch': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const mode = normalizeToolMode(body?.toolMode || body?.mode || getPreferredToolMode())
+        const model = getEndpointModel(body?.providerKey, body?.modelId)
+        if (!model) { sendJson(res, 404, { error: 'Model not found' }); return }
+        if (!isModelCompatibleWithTool(model.providerKey, mode)) {
+          sendJson(res, 422, { error: 'Model is incompatible with selected tool', code: 'incompatible_model', mode, model })
+          return
+        }
+
+        const { saveResult } = persistPreferredToolMode(mode)
+        if (!saveResult.success) { sendJson(res, 500, { error: saveResult.error || 'Failed to persist tool mode' }); return }
+        noteUserActivity()
+        try {
+          const installResult = await installEndpointForMode(mode, model)
+          void syncFavoritesToRouter(model)
+          void sendUsageTelemetry(config, { noTelemetry: false }, {
+            event: 'app_action',
+            mode,
+            properties: {
+              source: 'web',
+              action_type: 'install_endpoint',
+              tool_mode: mode,
+              provider: model.providerKey,
+              model_id: model.modelId,
+              model_label: model.label,
+              model_tier: model.tier,
+            },
+          })
+          sendJson(res, 200, { configured: true, mode, model, installResult })
+        } catch (err) {
+          sendJson(res, 422, {
+            error: err?.message || 'Failed to install endpoint',
+            code: 'endpoint_install_failed',
+            mode,
+            model,
+          })
+        }
+        return
+      }
+
+      // ── M3: Smart Recommend — wraps the same core scoring engine as the TUI ──
+      case '/api/recommend': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const answers = body?.answers || {}
+        const taskType = answers.taskType
+        const priority = answers.priority
+        const contextBudget = answers.contextBudget
+        if (!TASK_TYPES[taskType] || !PRIORITY_TYPES[priority] || !CONTEXT_BUDGETS[contextBudget]) {
+          sendJson(res, 422, { error: 'Invalid recommendation answers' })
+          return
+        }
+        const top3 = getTopRecommendations(results, taskType, priority, contextBudget, 3)
+          .map(({ result, score }) => ({
+            result: serializeModel(result),
+            score,
+            reason: buildRecommendReason(result, answers),
+          }))
+        void sendUsageTelemetry(config, { noTelemetry: false }, {
+          event: 'app_action',
+          mode: getPreferredToolMode(),
+          properties: { source: 'web', action_type: 'smart_recommend', taskType, priority, contextBudget },
+        })
+        sendJson(res, 200, { top3, answers: { taskType, priority, contextBudget } })
+        return
+      }
+
+      // ── M3: web telemetry mirror — never blocks UX and never exposes secrets ──
+      case '/api/telemetry/event': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const event = typeof body?.event === 'string' && body.event.trim() ? body.event.trim() : 'app_action'
+        const properties = body?.properties && typeof body.properties === 'object' && !Array.isArray(body.properties)
+          ? body.properties
+          : {}
+        void sendUsageTelemetry(config, { noTelemetry: false }, {
+          event,
+          mode: getPreferredToolMode(),
+          properties: { ...properties, source: 'web' },
+        })
+        sendJson(res, 200, { ok: true })
+        return
+      }
 
       case '/api/events':
         res.writeHead(200, {

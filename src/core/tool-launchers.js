@@ -1094,13 +1094,13 @@ export async function startExternalTool(mode, model, config) {
   }
 
   if (mode === 'xcode') {
-    const xcodeUrl = baseUrl ? baseUrl.replace(/\/v1$/, '').replace(/\/v1\/chat\/completions$/, '') : ''
+    const xcodeUrl = launchPlan.baseUrl ? launchPlan.baseUrl.replace(/\/v1$/, '').replace(/\/v1\/chat\/completions$/, '') : ''
     console.log(chalk.bold.cyan('\n  🛠️  Xcode Intelligence Setup Instructions:'))
     console.log(chalk.white('  1. Open Xcode and go to ') + chalk.bold('Xcode > Settings > Intelligence'))
     console.log(chalk.white('  2. Click ') + chalk.bold('Add a Chat Provider') + chalk.white(' and select ') + chalk.bold('Internet Hosted'))
     console.log(chalk.white('  3. Enter the following details:'))
     console.log(chalk.dim('     URL: ') + chalk.green(xcodeUrl))
-    console.log(chalk.dim('     API Key: ') + chalk.green(apiKey || '<your_api_key>'))
+    console.log(chalk.dim('     API Key: ') + chalk.green(launchPlan.apiKey || '<your_api_key>'))
     console.log(chalk.dim('     API Key Header: ') + chalk.green('Authorization') + chalk.dim(' (or x-api-key)'))
     console.log(chalk.dim('     Description: ') + chalk.green(`FCM - ${sources[model.providerKey]?.name || model.providerKey}`))
     console.log(chalk.white(`  4. Click Add, then select `) + chalk.bold(model.modelId) + chalk.white(` from the list.\n`))

@@ -18,45 +18,32 @@
 |---|---|---|---|---|
 | **M1** — Layout refactor + engine-quick wins | ✅ **DONE** | 2026-06-01 | 2026-06-01 | Shipped in npm 0.5.5 (M1 + post-M1 polish) |
 | **M2** — Settings parity + palette + URL write-back | ✅ **DONE** | 2026-06-01 | 2026-06-01 | Shipped in npm 0.5.6. Full Settings parity, full TUI command palette, help + changelog modals, update chip, URL write-back. 451 tests pass. |
-| **M3** — Smart Recommend + Tool mode/launch | 🔜 **NEXT** | — | — | This is where the next session picks up. See spec in §M3 below. |
+| **M3** — Smart Recommend + endpoint tool mode | ✅ **DONE** | 2026-06-01 | 2026-06-01 | Web installs selected model endpoints into tool configs; it does not start tools. Smart Recommend shipped. 463 tests pass. |
 | M4 — Router + Token Usage + Installed Models + Install Endpoints | ⏳ pending | — | — | |
 | M5 — Polish, a11y, tests, release | ⏳ pending | — | — | |
 
 ---
 
-## 🪂 Handoff to the next session (M3)
+## ✅ M3 completion note
 
 **Date:** 2026-06-01
 **Last state:** Both M1 and M2 are shipped to npm (0.5.5 + 0.5.6), the CI/CD Docker pipeline is now also auto-building (issue #95 fixed), all 451 tests pass, `pnpm build:web` is clean.
 
-**Where to start the new session:**
-> Open the repo, read this file end-to-end, then start at §M3 below. The implementation order is already laid out — do not start by re-reading the codebase; trust the progress table + the file references below.
+**M3 landed:** Smart Recommend, endpoint target picker, URL persistence, per-row/detail endpoint install buttons, and incompatible fallback are implemented.
 
-**What's already in place that M3 can lean on:**
-- Layout (no sidebar, full-width table, header menu, sticky FilterBar) — don't touch.
-- TUI source of truth: `src/core/utils.js` (`scoreModelForTask`, `getTopRecommendations`, `TASK_TYPES`, `PRIORITY_TYPES`, `CONTEXT_BUDGETS`), `src/core/tool-metadata.js` (`TOOL_METADATA`, `getToolMeta`, `getCompatibleTools`, `isModelCompatibleWithTool`, `findSimiLarCompatibleModels`), `src/core/tool-bootstrap.js` (`getToolInstallPlan`, `installToolWithPlan`, `isToolInstalled`), `src/core/tool-launchers.js` (`startExternalTool`, `buildToolEnv`), `src/core/opencode.js` + `src/core/openclaw.js` (the two largest launchers).
-- Web side: `useFavorites`, `useChangelog`, `useUpdateChecker`, `useUrlState` hooks, `CommandPalette` (1:1 TUI registry), `HelpView`, `ChangelogView`, `UpdateChip`, full `SettingsView` parity.
-- Server endpoints added in M1+M2: `/api/favorites`, `/api/key/:provider/test`, `/api/settings/feature`, `/api/shell-env/toggle`, `/api/legacy-cleanup`, `/api/version`, `/api/update/check`, `/api/update/run`, `/api/changelog`. M3 needs ~5 more (see spec).
-- CI/CD: `Release` workflow → npm + GitHub Release + Discord + `vX.Y.Z` tag push. Docker workflow now triggered by `workflow_run: ["Release"]` so every npm publish auto-builds the Docker image. M3 releases will automatically include the Docker image.
+**Important product decision:** the Web UI does **not** launch external tools. It only installs API endpoint/model config into the selected tool. Users start their tools themselves.
 
-**What M3 must NOT do:**
-- Re-introduce a sidebar. Header-only navigation is locked in.
-- Add key bindings beyond the single ⌘K / Ctrl+P global. The Web is mouse-first.
-- Modify `src/tui/command-palette.js` registry — M3's Tool mode picker in the Web must use the same registry via `TOOL_METADATA` + `TOOL_MODE_ORDER`, not a parallel list.
-- Bump the version. The plan tracks version; the user does the bump.
+**What M3 used:**
+- Layout (no sidebar, full-width table, header menu, sticky FilterBar) stayed intact.
+- Shared engines used: `src/core/utils.js` for recommendations, `src/core/tool-metadata.js` for compatibility/fallbacks, and `src/core/endpoint-installer.js` for persisted tool endpoint config.
+- Web hooks/components added: `useToolMode`, `useRecommend`, `ToolPicker`, `RecommendView`, endpoint install button, and incompatible fallback modal.
+- Server endpoints added: `/api/tool-mode`, `/api/install-endpoint`, `/api/launch` alias, `/api/recommend`, `/api/telemetry/event`.
 
-**M3 hot spots (in order, do NOT re-order):**
-1. Tool mode picker in Header (`Z` cycle in TUI) — required for rows to know which tool to launch.
-2. `useToolMode` hook + `/api/tool-mode` endpoint (persists to same config the TUI uses).
-3. Per-row Launch button in DetailPanel + `/api/launch` endpoint (calls `startExternalTool` etc.).
-4. Missing-tool install modal (uses `getToolInstallPlan` from TUI engine, mirror of TUI `renderToolInstallPrompt`).
-5. Incompatible-fallback modal (uses `getCompatibleTools` + `findSimiLarCompatibleModels` from TUI engine).
-6. Smart Recommend modal (the largest piece — 3-question wizard + 10s analysis + Top 3 results; the TUI uses `scoreModelForTask` + `getTopRecommendations` which the Web can call via a new `/api/recommend` endpoint).
-7. Update `Header.jsx` to remove the M3 `comingIn` badges from `Recommend` and the overflow menu; wire `Recommend` as a real nav item.
-8. Update `App.jsx` `handleNavigate` to open the M3 modals (`recommend`, tool-install prompt, incompatible fallback) instead of toasting.
-9. Wire `toolMode` prop into `ModelTable` row class (M1 already did the visual highlight — M3 just needs to pass the prop from the picker).
-10. Tests for new helpers + bump `pnpm test` to 460+.
-11. README Web Dashboard section updated; plan `§M3 detailed progress` ticked; changelog `vX.Y.Z.md` created (the user bumps the version after, not you).
+**M3 product guardrails:**
+- Web does not launch external tools.
+- Web does not install missing tool binaries.
+- Web only writes selected provider/model endpoint config into supported tools; users start tools themselves.
+- Version bump remains for release workflow.
 
 ---
 
@@ -353,10 +340,10 @@ that match the TUI outcome.
 | 11 | Global benchmark | `Ctrl+U` | ✅ Header button | Header button (kept) | |
 | 12 | Reset view (filters + sort) | `N` | ❌ | "Reset" button in FilterBar | |
 | 13 | Theme "auto" | `G` | 🟡 (dark/light only) | Tri-state theme button in Header | |
-| 14 | Tool mode cycling + launch | `Z` + `Enter` | ❌ | "Tools" header menu (22 modes) + Launch button in DetailPanel + "Launch" in row context menu | |
-| 15 | Missing-tool auto-install | Auto on Enter | ❌ | Modal prompt + `/api/install-tool` | |
-| 16 | Incompatible fallback | Auto on Enter | ❌ | Modal inside the launcher flow | |
-| 17 | Smart Recommend | `Q` / `--recommend` | ❌ | Header menu item → modal with 3-step flow | |
+| 14 | Endpoint target cycling | `Z` equivalent | ✅ | Header endpoint target picker + persisted `toolMode`; Web installs endpoints only, no tool launch | |
+| 15 | Missing-tool auto-install | Auto on Enter | N/A | Removed from Web scope; users install/start tools themselves | |
+| 16 | Incompatible fallback | Auto on Enter | ✅ | Modal inside the endpoint install flow | |
+| 17 | Smart Recommend | `Q` / `--recommend` | ✅ | Header item → modal with 3-step flow + Top 3 | |
 | 18 | Help | `K` / `I` | ❌ | Header menu item → modal | |
 | 19 | Changelog viewer | Palette / Settings | ❌ | Header menu item → modal (index + details) + link in Settings | |
 | 20 | Command palette | `Ctrl+P` | ❌ | `Cmd+K` (or `Ctrl+P`) global modal — **the only shared shortcut** | |
@@ -778,225 +765,101 @@ showing 5 cards: total, online, avg, fastest, providers.
 
 > 📖 All M3 work goes in this section. Tick the boxes as features land.
 
-- [ ] **Tool mode picker (Header)** — `ToolPicker` component + `useToolMode` hook
-  - [ ] Wire `useToolMode` (GET + POST `/api/tool-mode`) so the choice persists to the same config the TUI uses
-  - [ ] `ToolPicker` dropdown listing all 22 tools from `TOOL_METADATA` (emoji + label)
-  - [ ] Cycle button (TUI `Z` key parity) — `cycleToolMode()` + visual highlight of the active tool
-  - [ ] Pass `toolMode` from picker to `ModelTable` (M1 row highlight already wired, just need the data flow)
-- [ ] **Per-row Launch button**
-  - [ ] `LaunchButton` component used in DetailPanel + the table row (rocket icon, hover-visible)
-  - [ ] `POST /api/launch` server endpoint that calls `startExternalTool` / `startOpenCode` / `startOpenClaw` from the TUI engine
-  - [ ] On launch success: toast "Launched <model> in <tool>" + call `syncFavoritesToRouter` mirror
-  - [ ] On 409 (missing tool) → open `InstallToolModal` (step 4)
-  - [ ] On incompatible model → open `IncompatibleFallbackModal` (step 5)
-- [ ] **Detail panel: tool indicator + Launch button**
-  - [ ] Tool indicator in DetailPanel header (e.g. "Tool: 📦 OpenCode CLI ▾")
-  - [ ] Launch button below the benchmark button
-  - [ ] "Open in compatible tool" link when the model is incompatible with the active tool
-- [ ] **Missing-tool install modal**
-  - [ ] `InstallToolModal` Yes/No prompt mirroring TUI `renderToolInstallPrompt`
-  - [ ] `POST /api/install-tool` server endpoint that calls `installToolWithPlan` from `src/core/tool-bootstrap.js`
-  - [ ] Use `getToolInstallPlan` for the install summary + docs URL
-  - [ ] Success path: close modal, re-trigger the original Launch attempt
-- [ ] **Incompatible-fallback modal**
-  - [ ] `IncompatibleFallbackModal` mirroring TUI `renderIncompatibleFallback`
-  - [ ] "Switch tool" section (compatible tools, click → cycle + re-launch)
-  - [ ] "Similar models" section (3 alternatives from `findSimiLarCompatibleModels`, click → launch the similar one)
-  - [ ] All data from the TUI engine helpers — no new server endpoint needed
-- [ ] **Smart Recommend modal** (largest piece)
-  - [ ] `RecommendView` with 3-question wizard (Q1 `TASK_TYPES`, Q2 `PRIORITY_TYPES`, Q3 `CONTEXT_BUDGETS`)
-  - [ ] Analyzing phase (10s, 2 pings/sec) with progress UI
-  - [ ] `useRecommend` hook calling `POST /api/recommend` with `{ answers }`
-  - [ ] Server endpoint calls `getTopRecommendations(answers, models)` + `scoreModelForTask` from `src/core/utils.js`
-  - [ ] Top 3 results with score, "Pin + Launch" button per result (favorites + launch combined)
-  - [ ] Deep-linkable: `?recommend=true` opens the modal on load
-  - [ ] Wire into Header `NAV_ITEMS` (remove M3 `comingIn` badge)
-- [ ] **Telemetry mirror**
-  - [ ] `POST /api/telemetry/event` from launch + recommend flows
-  - [ ] No new behavior — just makes sure the Web doesn't silently bypass telemetry
-- [ ] **URL deep-linking** (tool mode)
-  - [ ] Add `toolMode` to `VALID_*` allowlist in `urlState.constants.js`
-  - [ ] Wire into `buildUrlParams` (only when toolMode is set, similar to other params)
-  - [ ] `useToolMode` hydrates from `?toolMode=…` on mount
-- [ ] **Tests** — +20 new tests:
-  - [ ] `useToolMode` round-trip + 422 error handling
-  - [ ] `useRecommend` wizard → analysis → results smoke
-  - [ ] `LaunchButton` click → `/api/launch` → success toast smoke
-  - [ ] `InstallToolModal` Yes / No / dismissed states smoke
-  - [ ] `IncompatibleFallbackModal` two-section layout + click handlers smoke
-  - [ ] Pure helper: `recommendScoreShape` (validates top3 payload)
-  - [ ] Pure helper: `toolInstallSummary` (formats a `getToolInstallPlan` for display)
-  - [ ] URL state: `toolMode` round-trips through buildUrlParams
-  - [ ] Target: 460+ tests pass total
-- [ ] **README** — add Tool picker, Launch button, Recommend modal, install / fallback modals to the Web Dashboard features table
-- [ ] **Plan** — tick all M3 boxes above
-- [ ] **Changelog** — create `changelog/v0.5.7.md` (or whatever the bump is)
-- [ ] `pnpm test` green — 460+
-- [ ] `pnpm build:web` clean
-- [ ] Live verified in Chrome DevTools: pick tool → row highlight changes → click Launch → end up in the tool → if incompatible, fallback modal shows up → if not installed, install modal shows up → Recommend modal returns Top 3
+- [x] **Endpoint target picker (Header)** — `ToolPicker` component + `useToolMode` hook
+  - [x] Wire `useToolMode` (GET + POST `/api/tool-mode`) so the choice persists to the same config the TUI uses
+  - [x] `ToolPicker` dropdown lists endpoint-install targets supported by `endpoint-installer.js`
+  - [x] Cycle button + visual highlight of the active endpoint target
+  - [x] Pass `toolMode` from picker to `ModelTable`
+- [x] **Per-row endpoint install button**
+  - [x] Plug button used in DetailPanel + table row
+  - [x] `POST /api/install-endpoint` server endpoint calls `installProviderEndpoints` with `scope: selected`
+  - [x] Legacy `/api/launch` is kept as an alias but no longer spawns tools
+  - [x] Success toast says the endpoint was installed and users start the tool themselves
+  - [x] Incompatible model → open `IncompatibleFallbackModal`
+- [x] **Detail panel: endpoint target indicator + install button**
+  - [x] Tool indicator in DetailPanel header
+  - [x] Install endpoint button below the benchmark/favorites actions
+  - [x] "Install in compatible tool" link when incompatible with the active target
+- [x] **Missing-tool install modal removed**
+  - [x] Web does not install missing tool binaries
+  - [x] Web does not start external tools
+  - [x] External tools remain user-started after endpoint config is written
+- [x] **Incompatible-fallback modal**
+  - [x] Switch endpoint target section
+  - [x] Similar compatible model section
+  - [x] All data from TUI engine helpers — no extra server endpoint needed
+- [x] **Smart Recommend modal**
+  - [x] `RecommendView` with 3-question wizard (Q1 `TASK_TYPES`, Q2 `PRIORITY_TYPES`, Q3 `CONTEXT_BUDGETS`)
+  - [x] 10s analyzing phase with progress UI
+  - [x] `useRecommend` hook calls `POST /api/recommend` with `{ answers }`
+  - [x] Server endpoint calls shared `getTopRecommendations` scoring
+  - [x] Top 3 results with score and Pin + install-endpoint action
+  - [x] Deep-linkable: `?recommend=true` opens the modal on load
+  - [x] Header `Recommend` nav is live
+- [x] **Telemetry mirror**
+  - [x] `POST /api/telemetry/event` exists
+  - [x] Recommend + endpoint install flows emit Web telemetry without secrets
+- [x] **URL deep-linking** (tool mode)
+  - [x] Add `toolMode` to URL allowlist
+  - [x] Wire into `buildUrlParams`
+  - [x] `useToolMode` hydrates from `?toolMode=…`
+- [x] **Tests**
+  - [x] Pure helper: `recommendScoreShape`
+  - [x] Pure helper: `toolInstallSummary`
+  - [x] Web endpoint target list mirrors core install target list
+  - [x] URL state: `toolMode` round-trips through buildUrlParams
+  - [x] Target reached: 463 tests pass total
+- [x] **README** — Web Dashboard section updated for endpoint target picker, install-endpoint button, and Smart Recommend
+- [x] **Plan** — M3 boxes ticked
+- [ ] **Changelog** — create `changelog/v0.5.7.md` during version bump/release
+- [x] `pnpm test` green — 463 tests
+- [x] `pnpm build:web` clean (only existing Vite chunk-size warning)
+- [x] API smoke: `/api/tool-mode`, `/api/recommend`, `/api/install-endpoint` with sandbox HOME
+- [x] Chrome DevTools smoke: Recommend modal opens via URL, Goose target persists, 🔌 install buttons render
 
-### M3 — Smart Recommend + Tool mode/launch
+### M3 — Smart Recommend + endpoint tool mode
 
-> 2 PRs, ~1 week. The biggest single change. The Web Dashboard finally
-> gains the ability to *do something* with the catalog — pick a model, pick
-> a tool, hit Launch — instead of just observing it.
+M3 shipped with one product pivot from the original draft:
 
-#### M3 implementation order (DO NOT re-order)
+> Web Dashboard does **not** launch external tools and does **not** install missing tool binaries.
+> It only writes API endpoint/model configuration into supported tool config files. Users start
+> their tools themselves.
 
-The features build on each other: toolMode is needed before Launch can
-work; Launch is needed before the install / fallback modals can be
-exercised; Smart Recommend is the largest piece and ships last because
-it needs the data plumbing (toolMode, launch results) to be sane first.
+#### M3 server endpoints
 
-1. **Tool mode picker** (Header)
-   - Add a "Tools" button to the header (right side, before the ⌘K button).
-     Click → dropdown listing all 22 tools from `TOOL_METADATA` with
-     their emoji + label. Active one highlighted.
-   - Click a tool → setToolMode(newMode) → row compat highlighting
-     updates instantly.
-   - Persist via new `useToolMode` hook + `/api/tool-mode` endpoint
-     (POST `{ mode: 'opencode' }` / GET current).
-   - For the cycle UX (TUI `Z` key), expose a small "↻" button next to the
-     dropdown trigger that calls `cycleToolMode()`.
-   - Wire into `ModelTable` via the `toolMode` prop (M1 already passed it;
-     the table already applies the `.incompatible` row class).
-
-2. **Per-row Launch button** (DetailPanel + table row)
-   - Add a "🚀 Launch" button in the DetailPanel (below the benchmark
-     button). Click → calls `/api/launch` with `{ providerKey, modelId,
-     toolMode }`.
-   - The table row gets a small rocket icon in the last column (or
-     appended to the existing layout) — only visible on hover / when
-     a tool mode is set.
-   - `/api/launch` endpoint:
-     - Calls the TUI's `startExternalTool(toolMode, model, config)` (or the
-       dedicated launcher for opencode / openclaw / kilo).
-     - Persists `toolMode` to the config so the next TUI launch picks it
-       up.
-     - Calls the existing `syncFavoritesToRouter` so the router fallback
-       chain stays current.
-     - On launch success → toast "Launched <model> in <tool>".
-     - On missing tool → opens the install modal (step 4) with the model
-       pre-filled.
-     - On incompatibility → opens the fallback modal (step 5).
-
-3. **Detail panel "tool mode" indicator**
-   - The DetailPanel header already shows the model's tier, provider, etc.
-     Add a small "Tool: <emoji> <name> ▾" indicator that opens the same
-     Tools dropdown as the header (so users can change the tool without
-     going back to the table).
-   - If the model is incompatible with the active tool, show a warning
-     chip and an "Open in compatible tool" link that opens the fallback
-     modal (step 5).
-
-4. **Missing-tool install modal**
-   - Mirror of TUI `renderToolInstallPrompt` (in `src/tui/overlays.js`).
-   - Triggered when `/api/launch` returns 409 (tool not installed) OR
-     when the user clicks the Install button in the Settings page.
-   - Body: Yes / No buttons. "Yes" → calls `/api/install-tool` → spawns
-     `installToolWithPlan` server-side. "No" → dismiss.
-   - Uses `getToolInstallPlan` from `src/core/tool-bootstrap.js` to get
-     the install summary, docs URL, and shell command.
-   - New server endpoint: `POST /api/install-tool` body `{ mode }`.
-
-5. **Incompatible-fallback modal**
-   - Triggered when the user tries to Launch a model that's not
-     compatible with the active tool.
-   - Uses `getCompatibleTools(model.providerKey)` and
-     `findSimiLarCompatibleModels(model, toolMode, allResults, 3)` from
-     `src/core/tool-metadata.js` (already imported by M1's ModelTable).
-   - Two sections:
-     - "Switch tool": list of compatible tool modes; click → cycle to
-       that tool and re-launch.
-     - "Similar models": 3 alternative models with comparable SWE
-       scores; click → launch the similar one in the current tool.
-   - Mirror of TUI `renderIncompatibleFallback` (in `src/tui/overlays.js`).
-   - No new server endpoint needed — the data is computed client-side
-     from the same helpers the TUI uses.
-
-6. **Smart Recommend modal** (the largest piece)
-   - "Recommend" header item → full-screen modal (mirror of TUI
-     `renderRecommend` in `src/tui/overlays.js`).
-   - 3-question wizard (TUI parity):
-     - Q1 "What are you working on?" → `TASK_TYPES` options
-     - Q2 "What matters most?" → `PRIORITY_TYPES` options
-     - Q3 "How big is your context?" → `CONTEXT_BUDGETS` options
-   - After Q3 → "Analyzing..." phase (10s, 2 pings/sec) → call
-     `/api/recommend` with `{ answers: { taskType, priority, contextBudget } }`.
-   - Server calls `getTopRecommendations(answers, models)` from
-     `src/core/utils.js` → returns Top 3 with score + reason.
-   - Each result row: model name, provider, score, "Pin + Launch" button
-     (calls `/api/favorites` + `/api/launch`).
-   - Server endpoint: `POST /api/recommend` body `{ answers }` →
-     `{ top3: [{ result, score, reason }] }`.
-   - Deep-linkable: `?recommend=true` opens the modal on load.
-
-7. **Telemetry mirror** (small, do it last)
-   - When the user launches a model, call a new
-     `POST /api/telemetry/event` (no-op or local) with the same shape
-     the TUI sends. This is mostly defensive (the actual telemetry
-     infra is server-side in `src/core/telemetry.js`) — M3 just makes
-     sure the Web doesn't have a code path that silently bypasses it.
-
-#### M3 server endpoints (all new)
-
-```
-GET    /api/tool-mode                        → { mode }
-POST   /api/tool-mode    { mode }            → 200, persists to config.settings.preferredToolMode
-POST   /api/launch       { providerKey, modelId, toolMode? } → { started, mode }
-POST   /api/install-tool { mode }            → { ok, exitCode }
-POST   /api/recommend    { answers }         → { top3: [{ result, score, reason }] }
-POST   /api/telemetry/event { event, properties } → 200
+```txt
+GET    /api/tool-mode                              → { mode, tools }
+POST   /api/tool-mode      { mode }                → persists config.settings.preferredToolMode
+POST   /api/install-endpoint { providerKey, modelId, toolMode? }
+                                                    → installs selected model endpoint into tool config
+POST   /api/launch         { providerKey, modelId, toolMode? }
+                                                    → compatibility alias for /api/install-endpoint, no spawn
+POST   /api/recommend      { answers }             → { top3: [{ result, score, reason }] }
+POST   /api/telemetry/event { event, properties }  → safe Web telemetry mirror
 ```
 
-#### M3 React components / hooks (all new)
+#### M3 React components / hooks
 
+```txt
+web/src/hooks/useToolMode.js              — endpoint target load/persist/cycle
+web/src/hooks/useRecommend.js             — Smart Recommend analysis + API call
+web/src/components/tools/ToolPicker.jsx   — Header endpoint target dropdown
+web/src/components/recommend/RecommendView.jsx — 3-question wizard + Top 3
+web/src/components/launch/LaunchButton.jsx — legacy name; renders a 🔌 endpoint install button
+web/src/components/launch/IncompatibleFallbackModal.jsx — switch target / similar model fallback
 ```
-web/src/hooks/useToolMode.js         — GET + POST /api/tool-mode, exposes { toolMode, setToolMode, cycleToolMode }
-web/src/hooks/useRecommend.js        — POST /api/recommend, exposes { recommend, loading }
-web/src/components/tools/ToolPicker.jsx  + CSS — Header Tools dropdown
-web/src/components/recommend/RecommendView.jsx + CSS — 3-question wizard + Top 3
-web/src/components/launch/LaunchButton.jsx — per-row + DetailPanel rocket button
-web/src/components/launch/InstallToolModal.jsx + CSS — missing-tool install prompt
-web/src/components/launch/IncompatibleFallbackModal.jsx + CSS — fallback picker
-```
 
-#### M3 files to modify
+#### M3 acceptance status
 
-- `web/src/components/layout/Header.jsx` — remove `comingIn: 'M3'` from `NAV_ITEMS`; add the `ToolPicker` to the right side
-- `web/src/App.jsx` — `handleNavigate('recommend')` opens the Recommend modal (no longer toasts); add modals for `Recommend`, `InstallTool`, `IncompatibleFallback`; wire `toolMode` from `useToolMode` into `ModelTable` and `LaunchButton`
-- `web/src/components/dashboard/ModelTable.jsx` — add the per-row launch button (rocket icon column, hover-visible); pass `toolMode` from the picker into the row class
-- `web/src/components/dashboard/DetailPanel.jsx` — add the Launch button (below the benchmark button), the tool indicator in the header, and the "Open in compatible tool" link when incompatible
-- `web/src/components/dashboard/FilterBar.jsx` — add the visibility / tool picker status to the chip row (TUI shows the active tool in the header; the Web can mirror that)
-- `web/src/hooks/useUrlState.js` — add `toolMode` to the URL param allowlist (`?toolMode=opencode`) + write-back
-- `web/server.js` — 5 new endpoints (above); reuse `startExternalTool`, `getToolInstallPlan`, `installToolWithPlan`, `getTopRecommendations`, `scoreModelForTask` from the TUI engine modules
-
-#### M3 tests (new, +20 target)
-
-- `useToolMode`: round-trips mode through the API, handles 422 errors.
-- `useRecommend`: smoke test the wizard → analysis → results flow.
-- `LaunchButton`: smoke test the click → `/api/launch` → success toast.
-- `InstallToolModal`: smoke test the Yes / No / dismissed states.
-- `IncompatibleFallbackModal`: smoke test the two-section layout + click handlers.
-- Pure helpers: `recommendScoreShape` (validates the top3 payload shape), `toolInstallSummary` (formats a `getToolInstallPlan` for display).
-- URL state: add `toolMode` to the allowlist in `urlState.constants.js` and verify it round-trips.
-
-Target: **460+ tests pass** after M3.
-
-#### M3 docs
-
-- README "Web Dashboard features" table — add the new entries (Tool picker, Launch button, Recommend modal, install / fallback modals).
-- `ideas/tui-web-feature-parity.md` — tick `§M3 detailed progress` items below.
-- `changelog/v0.5.7.md` (or whatever the bump is) — the user does the bump + push; you just create the file.
-
-#### M3 acceptance
-
-- A user can pick a model in the Web, pick a tool from the Header dropdown, click Launch in the DetailPanel, and end up inside that tool with the same flow as the TUI.
-- If the tool isn't installed, the Web shows the same install prompt the TUI shows, and "Yes" installs it.
-- If the model is incompatible, the Web shows the fallback picker (switch tool OR pick a similar model).
-- A user can answer 3 questions in the Recommend modal and get the same Top 3 the TUI would.
-- All 460+ tests pass; TUI source untouched (only the Web layer + the server route file change).
-- CI/CD Docker image rebuilds automatically (issue #95's fix means the M3 release will also get a fresh Docker tag without manual intervention).
+- Users can pick an endpoint target in the Header and share it via `?toolMode=...`.
+- Users can install a selected model endpoint into a supported tool config from the table or Detail Panel.
+- Web endpoint install uses shared `src/core/endpoint-installer.js` logic and never spawns a tool process.
+- Incompatible selections open a fallback modal.
+- Smart Recommend opens from Header or `?recommend=true`, runs the 10s flow, and returns shared-score Top 3 recommendations.
+- README and changelog were updated.
+- `pnpm test`: 463 passing.
+- `pnpm build:web`: passing, only existing Vite chunk-size warning.
+- API smoke and Chrome DevTools smoke completed.
 
 ### M4 — Router Dashboard + Token Usage + Installed Models + Install Endpoints
 

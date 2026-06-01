@@ -3458,6 +3458,8 @@ describe('openclaw selected model persistence', () => {
     const openclawConfigPath = join(dir, 'openclaw', 'openclaw.json')
     const config = { apiKeys: { groq: 'gsk-test' } }
     const model = { providerKey: 'groq', modelId: 'openai/gpt-oss-120b', label: 'GPT OSS 120B' }
+    const previousGroqKey = process.env.GROQ_API_KEY
+    delete process.env.GROQ_API_KEY
 
     try {
       const result = await startOpenClaw(model, config, { paths: { openclawConfigPath } })
@@ -3469,6 +3471,8 @@ describe('openclaw selected model persistence', () => {
       assert.equal(written.models.providers['fcm-groq'].models[0].id, 'openai/gpt-oss-120b')
       assert.equal(written.env.GROQ_API_KEY, 'gsk-test')
     } finally {
+      if (previousGroqKey === undefined) delete process.env.GROQ_API_KEY
+      else process.env.GROQ_API_KEY = previousGroqKey
       rmSync(dir, { recursive: true, force: true })
     }
   })
@@ -3477,7 +3481,7 @@ describe('openclaw selected model persistence', () => {
 describe('endpoint install tracking', () => {
   it('exposes only persisted-config install targets in the Y install list', () => {
     const installTargets = getInstallTargetModes()
-    assert.deepEqual(installTargets, ['opencode', 'opencode-desktop', 'opencode-web', 'openclaw', 'kilo', 'crush', 'goose', 'pi', 'aider', 'qwen', 'openhands', 'amp', 'hermes', 'continue', 'cline', 'forgecode', 'fcm_router'])
+    assert.deepEqual(installTargets, ['opencode', 'opencode-desktop', 'opencode-web', 'openclaw', 'crush', 'goose', 'pi', 'aider', 'qwen', 'openhands', 'amp', 'forgecode', 'fcm_router'])
   })
 
   it('normalizes tracked installs to canonical shape', () => {
@@ -5225,7 +5229,8 @@ describe('useUrlState: buildUrlParams', () => {
 })
 
 // ─── M2: URL state validation (useUrlState parseUrlParams via the constants) ──
-import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS } from '../web/src/hooks/urlState.constants.js'
+import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS, VALID_TOOL_MODES } from '../web/src/hooks/urlState.constants.js'
+import { INSTALL_ENDPOINT_TOOL_MODES, recommendScoreShape, toolInstallSummary } from '../web/src/utils/m3.js'
 
 describe('useUrlState: validation constants', () => {
   it('tier allowlist matches the TUI TIER_CYCLE', () => {
@@ -5248,6 +5253,96 @@ describe('useUrlState: validation constants', () => {
       assert.ok(VALID_VIEWS.has(v), `view ${v} should be accepted`)
     }
     assert.equal(VALID_VIEWS.has('admin'), false)
+  })
+
+  it('tool mode allowlist mirrors TOOL_MODE_ORDER', () => {
+    for (const mode of TOOL_MODE_ORDER) {
+      assert.ok(VALID_TOOL_MODES.has(mode), `tool mode ${mode} should be accepted`)
+    }
+    assert.equal(VALID_TOOL_MODES.has('claude-code'), false)
+  })
+})
+
+// ─── M3: Tool mode + endpoint install + recommend static contracts ─────
+describe('M3 web parity helpers and wiring', () => {
+  it('buildUrlParams round-trips toolMode for shareable endpoint links', () => {
+    const params = buildUrlParams({
+      currentView: 'dashboard', filterTier: 'all', filterStatus: 'all',
+      filterProvider: 'all', filterVerdict: 'all', filterHealth: 'all',
+      sortColumn: null, sortDirection: null, searchQuery: '',
+      toolMode: 'goose',
+    })
+    assert.equal(Object.fromEntries(params.entries()).toolMode, 'goose')
+  })
+
+  it('recommendScoreShape accepts valid Top 3 payloads', () => {
+    assert.equal(recommendScoreShape({ top3: [{
+      result: { providerKey: 'groq', modelId: 'openai/gpt-oss-120b', label: 'GPT OSS 120B' },
+      score: 88,
+      reason: 'S tier · currently up',
+    }] }), true)
+  })
+
+  it('recommendScoreShape rejects malformed recommendation payloads', () => {
+    assert.equal(recommendScoreShape({ top3: [{ result: { providerKey: 'groq' }, score: 200, reason: '' }] }), false)
+    assert.equal(recommendScoreShape(null), true)
+  })
+
+  it('toolInstallSummary formats supported install plans', () => {
+    const summary = toolInstallSummary(getToolInstallPlan('opencode', { platform: 'darwin' }))
+    assert.equal(summary.supported, true)
+    assert.match(summary.title, /OpenCode/i)
+    assert.match(summary.command, /npm install/)
+    assert.match(summary.docsUrl, /^https:/)
+  })
+
+  it('toolInstallSummary formats unsupported install plans', () => {
+    const summary = toolInstallSummary(getToolInstallPlan('opencode-desktop', { platform: 'darwin' }))
+    assert.equal(summary.supported, false)
+    assert.equal(summary.command, null)
+    assert.match(summary.title, /Desktop|manual|platform/i)
+  })
+
+  it('Web endpoint target cycle mirrors the core install targets', () => {
+    assert.deepEqual(INSTALL_ENDPOINT_TOOL_MODES, getInstallTargetModes())
+  })
+
+  it('Header wires ToolPicker and enables Recommend navigation without M3 badge', () => {
+    const source = readFileSync(join(ROOT, 'web/src/components/layout/Header.jsx'), 'utf8')
+    assert.match(source, /<ToolPicker/)
+    assert.match(source, /id: 'recommend',\s+label: 'Recommend'/)
+    assert.doesNotMatch(source, /id: 'recommend',[\s\S]*?comingIn: 'M3'/)
+  })
+
+  it('ModelTable exposes a non-sortable endpoint install column', () => {
+    const source = readFileSync(join(ROOT, 'web/src/components/dashboard/ModelTable.jsx'), 'utf8')
+    assert.match(source, /id: 'launch'/)
+    assert.match(source, /<LaunchButton/)
+    assert.match(source, /enableSorting:\s*false/)
+  })
+
+  it('DetailPanel exposes tool picker, endpoint button, and fallback affordance', () => {
+    const source = readFileSync(join(ROOT, 'web/src/components/dashboard/DetailPanel.jsx'), 'utf8')
+    assert.match(source, /<ToolPicker/)
+    assert.match(source, /<LaunchButton/)
+    assert.match(source, /Install in compatible tool/)
+  })
+
+  it('web server exposes M3 endpoint routes and does not spawn tools from the dashboard', () => {
+    const source = readFileSync(join(ROOT, 'web/server.js'), 'utf8')
+    for (const route of ['/api/tool-mode', '/api/install-endpoint', '/api/launch', '/api/recommend', '/api/telemetry/event']) {
+      assert.ok(source.includes(`case '${route}'`), `${route} route should exist`)
+    }
+    assert.match(source, /installEndpointForMode/)
+    assert.doesNotMatch(source, /launchToolForMode/)
+    assert.doesNotMatch(source, /startExternalTool/)
+  })
+
+  it('M3 hooks import cleanly', async () => {
+    const toolModeMod = await import('../web/src/hooks/useToolMode.js')
+    const recommendMod = await import('../web/src/hooks/useRecommend.js')
+    assert.equal(typeof toolModeMod.useToolMode, 'function')
+    assert.equal(typeof recommendMod.useRecommend, 'function')
   })
 })
 

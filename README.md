@@ -155,7 +155,7 @@ free-coding-models web
 
 This starts the realtime Web Dashboard locally, opens it in your browser, and uses `http://localhost:3333/` by default. Override the port with `FCM_WEB_PORT=3334 free-coding-models web`.
 
-#### Web Dashboard features (M1 parity with TUI)
+#### Web Dashboard features (M3 parity with TUI)
 
 The local Web Dashboard is a real-time control center for the model catalog
 — not just a static table. The header holds every navigation entry, the
@@ -164,24 +164,25 @@ and every TUI capability that's safe to port ships behind a button or chip.
 
 | Area | What's there |
 |---|---|
-| **Header** | Logo + version · primary nav (Dashboard, Settings, Analytics, Recommend, Router) · kebab menu (Help, Changelog, Install Endpoints, Installed Models) · `⌘K` command palette · AI Latency · theme · export |
-| **Model table** | Full-bleed (no left/right border, no margin) under the sticky header + filter bar · 16 columns, resizable widths persisted in localStorage, ⭐ star per row, medal borders for top-3, dark-red row class for tool-incompatible models, click AI Lat. cell to run a per-row benchmark · table header row stays sticky while scrolling |
+| **Header** | Logo + version · primary nav (Dashboard, Settings, Analytics, Recommend, Router) · kebab menu (Help, Changelog, Install Endpoints, Installed Models) · endpoint target picker · `⌘K` command palette · AI Latency · theme · export |
+| **Model table** | Full-bleed (no left/right border, no margin) under the sticky header + filter bar · 17 columns, resizable widths persisted in localStorage, ⭐ star per row, 🔌 install-endpoint button per row, medal borders for top-3, dark-red row class for tool-incompatible models, click AI Lat. cell to run a per-row benchmark · table header row stays sticky while scrolling |
 | **Filter bar** | Sticky right below the header (always visible) · Tier / Status / Verdict / Health chip rows · Visibility dropdown (Normal / Configured only / Usable only) · Provider select · custom text filter chip with `X` clear · Reset button (TUI `N`) · ping mode (Speed / Normal / Slow / Forced) · "next ping in Xs" countdown (TUI style, always shown) |
 | **Stats bar** | Removed in M1 (users found it noisy; the table + chips carry the same info at a glance) |
-| **Detail panel** | Slide-in from the right on row click · per-row benchmark button (TUI `Ctrl+A`) · favorite toggle (TUI `F`) + up/down reorder (TUI `Shift+↑↓`) · latency trend chart · all stats |
+| **Detail panel** | Slide-in from the right on row click · endpoint target indicator + install-endpoint button · per-row benchmark button (TUI `Ctrl+A`) · favorite toggle (TUI `F`) + up/down reorder (TUI `Shift+↑↓`) · latency trend chart · all stats |
 | **Command palette** | `⌘K` / `Ctrl+P` (the only global keyboard shortcut) · fuzzy search across views, theme, ping mode, reset, export, **and the full TUI command registry** (every filter / sort / tool / page entry from `src/tui/command-palette.js`) |
 | **Keyboard** | `Esc` closes any modal · `Cmd+K` toggles the palette — that's it. Everything else is mouse-first. |
-| **URL deep-linking** | `?tier=S+&sort=verdict&origin=groq&view=dashboard&q=…` hydrates the dashboard on load **and** every filter / sort / view change is reflected back in the URL (debounced 80ms, `history.replaceState`). CLI flags become shareable links. |
+| **URL deep-linking** | `?tier=S+&sort=verdict&origin=groq&toolMode=goose&q=…` hydrates the dashboard on load **and** every filter / sort / view / endpoint target change is reflected back in the URL (debounced 80ms, `history.replaceState`). CLI flags become shareable links. |
 | **Favorites** | Shared with the TUI through `~/.free-coding-models.json` — a star in the Web is a star in the TUI. Includes pinned+sticky display mode (TUI `Y`). |
 | **Help modal** | Header overflow menu → "Help" opens a full-screen modal with all the TUI's keyboard shortcuts, filter behavior, and parity notes. Live search bar. |
 | **Changelog modal** | Header overflow menu → "Changelog" or Settings "Open Changelog" link. Two-phase (index of versions + per-version release notes). Deep-linkable to a specific version. |
 | **Update flow** | Header `⬆ vX.Y.Z` chip + popover with "Update now" + "What's new" (jumps to the new version's changelog entry). Polls every 5 min. |
 | **Settings parity** | Full Settings page: theme (auto/dark/light), favorites pinned mode, startup AI Speed Scan, shell env export, legacy proxy cleanup, per-provider **Test** key button (TUI `T` key), update row. All settings persisted to the same `~/.free-coding-models.json` the TUI uses. |
 | **Theme** | Tri-state `auto / dark / light` cycle (TUI `G`) — auto follows the OS preference. |
+| **Smart Recommend** | Header "Recommend" opens the 3-question wizard, runs the 10s analysis phase, then returns the Top 3 shared-score recommendations with Pin + install-endpoint actions. |
+| **Endpoint installs** | The Web never starts external tools. It writes the selected provider/model endpoint into the chosen tool config (`/api/install-endpoint`), then users start their tool themselves. |
 
-Roadmap items (header menu badges show "M3 / M4" until they land):
-- **M3** — Smart Recommend (3-question wizard → 10s analysis → Top 3), tool mode picker, per-row Launch, missing-tool install prompt, incompatible-fallback modal.
-- **M4** — Router Dashboard, Token Usage, Install Endpoints wizard, Installed Models manager.
+Roadmap items (header menu badges show "M4" until they land):
+- **M4** — Router Dashboard, Token Usage, full Install Endpoints wizard, Installed Models manager.
 
 ### Available Image Tags
 

@@ -22,8 +22,8 @@
  *   → useUrlState({ currentView, setCurrentView, filterState, paletteOpen, setPaletteOpen })
  *   → buildUrlParams(state) — pure helper exposed for tests
  */
-import { useEffect, useRef, useCallback } from 'react'
-import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS } from './urlState.constants.js'
+import { useEffect, useRef } from 'react'
+import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS, VALID_TOOL_MODES } from './urlState.constants.js'
 
 // 📖 Read the current URL params as a normalized object. Returns null on SSR
 // 📖 or when the URL is invalid.
@@ -40,7 +40,8 @@ function parseUrlParams() {
   if (params.has('sort') && VALID_SORTS.has(params.get('sort'))) out.sort = params.get('sort')
   if (params.has('dir') && VALID_DIRS.has(params.get('dir'))) out.dir = params.get('dir')
   if (params.has('q')) out.q = params.get('q')
-  if (params.has('toolMode')) out.toolMode = params.get('toolMode')
+  if (params.has('toolMode') && VALID_TOOL_MODES.has(params.get('toolMode'))) out.toolMode = params.get('toolMode')
+  if (params.has('recommend') && ['1', 'true', 'open'].includes(params.get('recommend'))) out.view = 'recommend'
   if (params.has('palette') && params.get('palette') === 'open') out.palette = 'open'
   return out
 }

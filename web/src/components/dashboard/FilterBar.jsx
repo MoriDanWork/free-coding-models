@@ -8,6 +8,7 @@
  */
 import { useState, useEffect, useMemo } from 'react'
 import { IconRefresh, IconX, IconFilter, IconCircleCheck, IconAlertTriangle, IconActivity, IconEye, IconStar } from '@tabler/icons-react'
+import { getToolMeta } from '../../../../src/core/tool-metadata.js'
 import styles from './FilterBar.module.css'
 
 // 📖 Chip sets match the TUI cycles 1:1 (see useFilter.js). Keep these in sync.
@@ -109,6 +110,7 @@ export default function FilterBar({
   globalBenchmarkRunning,
   globalBenchmarkTotal,
   globalBenchmarkCompleted,
+  toolMode = 'opencode',
 }) {
   const [countdown, setCountdown] = useState(null)
 
@@ -124,6 +126,7 @@ export default function FilterBar({
   }, [nextPingAt])
 
   const countdownDisplay = countdown !== null ? formatCountdown(countdown) : null
+  const activeTool = getToolMeta(toolMode)
 
   // 📖 Custom text filter chip — sticks to the right of the search bar, with
   // 📖 an "X" to clear (TUI's `X` key behavior).
@@ -195,6 +198,14 @@ export default function FilterBar({
             <option key={p.key} value={p.key}>{p.name} ({p.count})</option>
           ))}
         </select>
+      </div>
+
+      <div className={styles.group}>
+        <label className={styles.filterLabel}>Endpoint target</label>
+        <div className={styles.toolStatus} title="Active endpoint install target from the Header picker">
+          <span>{activeTool.emoji}</span>
+          <strong>{activeTool.label}</strong>
+        </div>
       </div>
 
       <div className={styles.spacer} />

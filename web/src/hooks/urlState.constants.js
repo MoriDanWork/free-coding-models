@@ -5,6 +5,7 @@
  * 📖 HEALTH_CYCLE constants so the URL reflects the same filter universe
  * 📖 the TUI uses.
  */
+import { TOOL_MODE_ORDER } from '../../../src/core/tool-metadata.js'
 
 const TIER_VALUES = new Set(['S+', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'C', 'all'])
 const STATUS_VALUES = new Set(['up', 'down', 'pending', 'all'])
@@ -15,6 +16,7 @@ const SORT_VALUES = new Set([
 ])
 const VIEW_VALUES = new Set(['dashboard', 'settings', 'analytics', 'recommend', 'router', 'help', 'changelog'])
 const DIR_VALUES = new Set(['asc', 'desc'])
+const TOOL_MODE_VALUES = new Set(TOOL_MODE_ORDER)
 
 export {
   TIER_VALUES as VALID_TIERS,
@@ -22,4 +24,5 @@ export {
   SORT_VALUES as VALID_SORTS,
   VIEW_VALUES as VALID_VIEWS,
   DIR_VALUES as VALID_DIRS,
+  TOOL_MODE_VALUES as VALID_TOOL_MODES,
 }

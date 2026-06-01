@@ -53,8 +53,8 @@ import { getToolMeta } from './tool-metadata.js'
 // 📖 zai and opencode-zen ARE OpenAI-compatible and CAN be installed into any tool.
 const DIRECT_INSTALL_UNSUPPORTED_PROVIDERS = new Set(['replicate', 'rovo', 'gemini'])
 // 📖 Install Endpoints only lists tools whose persisted config shape is actually supported here.
-// 📖 Claude Code, Codex, and Gemini stay out while their dedicated bridges are being rebuilt.
-const INSTALL_TARGET_MODES = ['opencode', 'opencode-desktop', 'opencode-web', 'openclaw', 'kilo', 'crush', 'goose', 'pi', 'aider', 'qwen', 'openhands', 'amp', 'hermes', 'continue', 'cline', 'forgecode', 'fcm_router']
+// 📖 Launch-only tools stay out: the Web dashboard configures endpoints, it never starts CLIs.
+const INSTALL_TARGET_MODES = ['opencode', 'opencode-desktop', 'opencode-web', 'openclaw', 'crush', 'goose', 'pi', 'aider', 'qwen', 'openhands', 'amp', 'forgecode', 'fcm_router']
 
 function getDefaultPaths() {
   const home = homedir()
@@ -131,7 +131,7 @@ function writeSimpleYamlMap(filePath, entries) {
 }
 
 function canonicalizeToolMode(toolMode) {
-  return toolMode === 'opencode-desktop' ? 'opencode' : toolMode
+  return toolMode === 'opencode-desktop' || toolMode === 'opencode-web' ? 'opencode' : toolMode
 }
 
 function getManagedProviderId(providerKey) {

@@ -74,7 +74,7 @@ const SECTIONS = [
     id: 'tools',
     title: '🧰 Tool mode (M3)',
     items: [
-      { key: 'Coming in M3', desc: 'Tool mode picker, per-row Launch button, missing-tool install prompt, incompatible-fallback modal' },
+      { key: 'M3 shipped', desc: 'Endpoint target picker, per-row Install Endpoint button, and incompatible-target fallback modal' },
     ],
   },
   {

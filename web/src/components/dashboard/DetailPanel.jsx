@@ -7,14 +7,16 @@
  * 📖 action section (star + reorder + per-row AI Speed Test button).
  * @functions DetailPanel → main panel component, buildDetailChart → SVG chart builder
  */
-import { useMemo } from 'react'
-import { IconStar, IconStarFilled, IconChevronUp, IconChevronDown, IconPlayerPlayFilled } from '@tabler/icons-react'
+import { IconStar, IconStarFilled, IconChevronUp, IconChevronDown, IconPlayerPlayFilled, IconAlertTriangle } from '@tabler/icons-react'
 import TierBadge from '../atoms/TierBadge.jsx'
 import VerdictBadge from '../atoms/VerdictBadge.jsx'
 import StatusDot from '../atoms/StatusDot.jsx'
 import StabilityCell from '../atoms/StabilityCell.jsx'
 import { formatPing, formatAvg, pingClass } from '../../utils/format.js'
 import { sweClass } from '../../utils/ranks.js'
+import LaunchButton from '../launch/LaunchButton.jsx'
+import ToolPicker from '../tools/ToolPicker.jsx'
+import { getToolMeta, isModelCompatibleWithTool } from '../../../../src/core/tool-metadata.js'
 import styles from './DetailPanel.module.css'
 
 function buildDetailChart(history) {
@@ -70,7 +72,10 @@ function StatRow({ label, children }) {
   )
 }
 
-export default function DetailPanel({ model, onClose, favorites, onBenchmark, onToast }) {
+export default function DetailPanel({
+  model, onClose, favorites, onBenchmark, onLaunch, onToast,
+  toolMode = 'opencode', onSetToolMode, onCycleToolMode, onOpenFallback,
+}) {
   if (!model) return null
 
   const chartSvg = buildDetailChart(model.pingHistory)
@@ -78,6 +83,8 @@ export default function DetailPanel({ model, onClose, favorites, onBenchmark, on
   const favRank = favorites?.favoriteRank(model) ?? Number.MAX_SAFE_INTEGER
   const isFavAtTop = isFav && favRank === 0
   const isFavAtBottom = isFav && favRank === (favorites?.favorites.length ?? 0) - 1
+  const toolMeta = getToolMeta(toolMode)
+  const compatible = isModelCompatibleWithTool(model.providerKey, toolMode)
 
   return (
     <div className={styles.panel}>
@@ -127,8 +134,23 @@ export default function DetailPanel({ model, onClose, favorites, onBenchmark, on
         <StatRow label="API Key">
           {model.hasApiKey ? '✅ Configured' : '❌ Missing'}
         </StatRow>
+        <StatRow label="Tool">
+          <ToolPicker
+            compact
+            toolMode={toolMode}
+            onSetToolMode={onSetToolMode}
+            onCycleToolMode={onCycleToolMode}
+          />
+        </StatRow>
+        {!compatible && (
+          <div className={styles.compatWarning}>
+            <IconAlertTriangle size={14} />
+            <span>{model.label} is not compatible with {toolMeta.emoji} {toolMeta.label}.</span>
+            <button onClick={() => onOpenFallback?.(model)}>Install in compatible tool</button>
+          </div>
+        )}
 
-        {/* ── M1: favorites + per-row benchmark action section ── */}
+        {/* ── M1/M3: favorites + benchmark + endpoint install action section ── */}
         {(favorites || onBenchmark) && (
           <div className={styles.actions}>
             {favorites && (
@@ -165,6 +187,9 @@ export default function DetailPanel({ model, onClose, favorites, onBenchmark, on
                   </div>
                 )}
               </div>
+            )}
+            {onLaunch && (
+              <LaunchButton model={model} toolMode={toolMode} onLaunch={onLaunch} />
             )}
             {onBenchmark && (
               <button

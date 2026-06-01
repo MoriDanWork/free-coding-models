@@ -331,3 +331,16 @@
   background: rgba(200, 20, 58, 0.06) !important;
   color: #888 !important;
 }
+
+/* ─── M3: per-row endpoint install plug ─── */
+.launchCell {
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.table tbody tr:hover .launchCell,
+.incompatible .launchCell,
+.benchRow .launchCell {
+  opacity: 1;
+}

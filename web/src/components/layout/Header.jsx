@@ -15,6 +15,7 @@ import {
   IconSparkles, IconRoute, IconDots, IconQuestionMark, IconHistory,
   IconPlug, IconFolders,
 } from '@tabler/icons-react'
+import ToolPicker from '../tools/ToolPicker.jsx'
 import styles from './Header.module.css'
 
 // 📖 Top-level nav items — always visible as buttons. Inlined here so the
@@ -24,7 +25,7 @@ const NAV_ITEMS = [
   { id: 'dashboard',   label: 'Dashboard',   icon: IconLayoutDashboard },
   { id: 'settings',    label: 'Settings',    icon: IconSettings },
   { id: 'analytics',   label: 'Analytics',   icon: IconActivity },
-  { id: 'recommend',   label: 'Recommend',   icon: IconSparkles,   comingIn: 'M3' },
+  { id: 'recommend',   label: 'Recommend',   icon: IconSparkles },
   { id: 'router',      label: 'Router',      icon: IconRoute,      comingIn: 'M4' },
 ]
 
@@ -43,6 +44,7 @@ export default function Header({
   onToggleTheme, onOpenExport, onOpenCommandPalette,
   onBenchmark, benchmarkRunning, benchmarkTotal, benchmarkCompleted,
   modelsCount, theme, onToast,
+  toolMode = 'opencode', onSetToolMode, onCycleToolMode,
   updateSlot = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -162,6 +164,12 @@ export default function Header({
       </div>
 
       <div className={styles.right}>
+        <ToolPicker
+          toolMode={toolMode}
+          onSetToolMode={onSetToolMode}
+          onCycleToolMode={onCycleToolMode}
+        />
+
         {/* ⌘K — the only global keyboard shortcut, opens the command palette */}
         <button
           className={styles.cmdkBtn}

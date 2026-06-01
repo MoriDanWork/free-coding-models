@@ -35,6 +35,7 @@ import AILatencyCell from '../atoms/AILatencyCell.jsx'
 import TPSCell from '../atoms/TPSCell.jsx'
 import NoKeyIcon from '../atoms/NoKeyIcon.jsx'
 import ProviderLogo from '../atoms/ProviderLogo.jsx'
+import LaunchButton from '../launch/LaunchButton.jsx'
 
 import { pingClass } from '../../utils/format.js'
 import { sweClass } from '../../utils/ranks.js'
@@ -172,7 +173,7 @@ function TrendCellRenderer({ row }) {
 // 📖 Note: `favorites` / `onBenchmarkRow` are read by the cell renderers below
 // 📖 via closure. We rebuild the columns list whenever any of these change so
 // 📖 the cells always see fresh values.
-const buildColumns = ({ favorites, onBenchmarkRow, onSelectModel }) => [
+const buildColumns = ({ favorites, onBenchmarkRow, onSelectModel, onLaunch, toolMode }) => [
   // 📖 Star column — leftmost, mirrors the TUI's `F` key.
   colHelper.display({
     id: 'fav',
@@ -303,13 +304,24 @@ const buildColumns = ({ favorites, onBenchmarkRow, onSelectModel }) => [
     cell: TrendCellRenderer,
     enableSorting: true,
   }),
+  colHelper.display({
+    id: 'launch',
+    header: '🔌',
+    size: 42,
+    enableSorting: false,
+    cell: ({ row }) => (
+      <div className={styles.launchCell}>
+        <LaunchButton model={row.original} toolMode={toolMode} onLaunch={onLaunch} variant="icon" />
+      </div>
+    ),
+  }),
 ]
 
 // 📖 DEFAULT_COLUMN_SIZING: extracted from the columns above. This is the single
 // 📖 source of truth for both the table layout and the useColumnSizing hook's reset target.
 // 📖 The 'Reset columns' button restores these exact widths.
 // 📖 We build a placeholder columns list (no callbacks needed) to extract sizes.
-const PLACEHOLDER_COLUMNS = buildColumns({ favorites: { isFavorite: () => false, toggle: () => {} }, onBenchmarkRow: null, onSelectModel: null })
+const PLACEHOLDER_COLUMNS = buildColumns({ favorites: { isFavorite: () => false, toggle: () => {} }, onBenchmarkRow: null, onSelectModel: null, onLaunch: null, toolMode: 'opencode' })
 export const DEFAULT_COLUMN_SIZING = PLACEHOLDER_COLUMNS.reduce((acc, c) => {
   if (c.id) acc[c.id] = c.size ?? 80
   return acc
@@ -330,7 +342,7 @@ function SortIcon({ column }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ModelTable({
-  filtered, onSelectModel, onBenchmarkRow, favorites,
+  filtered, onSelectModel, onBenchmarkRow, onLaunch, favorites,
   sortColumn, sortDirection, onSort,
   toolMode = null,
 }) {
@@ -359,8 +371,8 @@ export default function ModelTable({
   // 📖 Build the columns with the current favorites/onBenchmarkRow handlers.
   // 📖 Re-derive when favorites reference changes so the star cells re-render.
   const columns = useMemo(
-    () => buildColumns({ favorites, onBenchmarkRow, onSelectModel }),
-    [favorites, onBenchmarkRow, onSelectModel]
+    () => buildColumns({ favorites, onBenchmarkRow, onSelectModel, onLaunch, toolMode }),
+    [favorites, onBenchmarkRow, onSelectModel, onLaunch, toolMode]
   )
 
   // 📖 Column sizing state with localStorage persistence (see useColumnSizing.js).
