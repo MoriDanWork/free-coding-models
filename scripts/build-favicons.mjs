@@ -28,8 +28,9 @@
  *   `web/dist/favicons/` on `vite build`. We also drop a top-level
  *   `web/public/favicon.ico` for legacy browsers that probe `/favicon.ico`.
  *
- *   Zero npm dependencies — uses the ImageMagick `magick` binary which is
- *   pre-installed on macOS / Linux dev machines and in the Docker image.
+ *   Zero npm dependencies — uses ImageMagick through `magick` (v7) or
+ *   `convert` (v6). GitHub's Ubuntu package currently exposes `convert`, so
+ *   supporting both keeps local builds, release CI, and Docker builds aligned.
  *
  * @functions
  *   → main() — entry point, runs the full pipeline
@@ -94,16 +95,36 @@ const BROWSERCONFIG_XML = `<?xml version="1.0" encoding="utf-8"?>
 </browserconfig>
 `
 
-async function ensureMagick() {
-  try {
-    const { stdout } = await execFileP('magick', ['-version'], { timeout: 5_000 })
-    return stdout.split('\n')[0]?.trim() || 'ImageMagick'
-  } catch {
-    throw new Error(
-      'ImageMagick `magick` binary not found in PATH.\n' +
-      'Install it: macOS → `brew install imagemagick`, Linux → `apt install imagemagick`.',
-    )
+let imageMagickCommand = null
+
+async function ensureImageMagick() {
+  const candidates = ['magick', 'convert']
+  const errors = []
+
+  for (const bin of candidates) {
+    try {
+      const { stdout } = await execFileP(bin, ['-version'], { timeout: 5_000 })
+      imageMagickCommand = bin
+      return `${stdout.split('\n')[0]?.trim() || 'ImageMagick'} (${bin})`
+    } catch (err) {
+      errors.push(`${bin}: ${err.code || err.message}`)
+    }
   }
+
+  throw new Error(
+    'ImageMagick binary not found in PATH (`magick` or `convert`).\n' +
+    'Install it: macOS → `brew install imagemagick`, Linux → `apt install imagemagick`.\n' +
+    `Checked: ${errors.join(', ')}`,
+  )
+}
+
+function getImageMagickCommand() {
+  if (!imageMagickCommand) throw new Error('ImageMagick was not initialized before conversion')
+  return imageMagickCommand
+}
+
+async function runImageMagick(args) {
+  await execFileP(getImageMagickCommand(), args)
 }
 
 async function assertSource() {
@@ -114,11 +135,11 @@ async function assertSource() {
   }
 }
 
-async function magickConvert({ src, dst, size, fit = 'cover' }) {
+async function magickConvert({ src, dst, size }) {
   // 📖 `-background none` keeps transparency if the source ever has it.
   // 📖 `-strip` removes metadata to keep file size minimal.
   // 📖 `-quality 95` for PNG ≈ visually lossless.
-  await execFileP('magick', [
+  await runImageMagick([
     src,
     '-background', 'none',
     '-resize', `${size}x${size}`,
@@ -139,7 +160,7 @@ async function magickIco({ src, dst, sizes }) {
     await magickConvert({ src, dst: tmp, size })
     args.push(tmp)
   }
-  await execFileP('magick', [...args, dst])
+  await runImageMagick([...args, dst])
   for (const size of sizes) {
     const tmp = dst.replace(/\.ico$/, `.ico-${size}.png`)
     await execFileP('rm', [tmp])
@@ -149,7 +170,7 @@ async function magickIco({ src, dst, sizes }) {
 async function main() {
   console.log('\n  🖼  build-favicons — generating web favicon set\n')
 
-  const version = await ensureMagick()
+  const version = await ensureImageMagick()
   console.log(`     • ImageMagick: ${version}`)
   console.log(`     • source:      ${SOURCE_PNG}`)
   console.log(`     • out:         ${OUT_DIR}`)
@@ -181,7 +202,7 @@ async function main() {
   // 📖 Windows 8/10/11 "wide" tile is 310×150 — we generate it explicitly
   // 📖 (not in the square list) so the browserconfig schema resolves it.
   const wideDst = join(OUT_DIR, 'mstile-310x150.png')
-  await execFileP('magick', [
+  await runImageMagick([
     SOURCE_PNG,
     '-background', 'none',
     '-resize', '310x150',
