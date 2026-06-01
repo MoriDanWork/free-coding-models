@@ -28,10 +28,11 @@ const NAV_ITEMS = [
   { id: 'router',      label: 'Router',      icon: IconRoute,      comingIn: 'M4' },
 ]
 
-// 📖 Overflow menu items — Help, Changelog, Install Endpoints, Installed Models.
+// 📖 Overflow menu items — Help + Changelog shipped in M2; Install Endpoints
+// 📖 and Installed Models are still M4.
 const MENU_ITEMS = [
-  { id: 'help',              label: 'Help',               icon: IconQuestionMark, comingIn: 'M2' },
-  { id: 'changelog',         label: 'Changelog',          icon: IconHistory,      comingIn: 'M2' },
+  { id: 'help',              label: 'Help',               icon: IconQuestionMark },
+  { id: 'changelog',         label: 'Changelog',          icon: IconHistory },
   { id: 'install-endpoints', label: 'Install Endpoints',  icon: IconPlug,         comingIn: 'M4' },
   { id: 'installed-models',  label: 'Installed Models',   icon: IconFolders,      comingIn: 'M4' },
 ]
@@ -42,6 +43,7 @@ export default function Header({
   onToggleTheme, onOpenExport, onOpenCommandPalette,
   onBenchmark, benchmarkRunning, benchmarkTotal, benchmarkCompleted,
   modelsCount, theme, onToast,
+  updateSlot = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -187,6 +189,9 @@ export default function Header({
             <span>AI Latency</span>
           )}
         </button>
+
+        {/* 📖 M2: update chip slot. Hidden when no update is available. */}
+        {updateSlot}
 
         <button className={styles.iconBtn} onClick={onToggleTheme} title={`Theme: ${theme} (click to cycle auto / dark / light)`}>
           {theme === 'light' ? <IconMoon size={16} stroke={1.5} /> : <IconSun size={16} stroke={1.5} />}

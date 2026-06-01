@@ -1,52 +1,37 @@
 /**
  * @file web/src/hooks/useUrlState.js
  * @description URL deep-linking hook — the Web's answer to TUI CLI flags (--tier, --sort, etc.).
- * 📖 M1 ships read-only hydration: on mount, parses the query string and hydrates the Web view.
- * 📖 M2 will add write-back (push filter/sort/view changes back to the URL via history.replaceState).
+ * 📖 M1 = read-only hydration on mount.
+ * 📖 M2 = adds write-back: every filter / sort / view / tool-mode / palette
+ * 📖 change pushes to the URL via `history.replaceState` so the URL stays
+ * 📖 in sync with the visible Web state and any URL is shareable.
  *
- * 📖 Supported query params (M1 = read-only):
- * 📖   ?tier=S+|S|A+|A|A-|B+|B|C|all  — sets the tier filter
- * 📖   ?status=up|down|pending|all   — sets the health/status filter
- * 📖   ?provider=<providerKey>|all   — sets the provider filter
- * 📖   ?verdict=<verdict>|all        — sets the verdict filter
- * 📖   ?health=<health>|all          — sets the health filter
- * 📖   ?sort=<col>&dir=asc|desc      — sets the sort column + direction
- * 📖   ?view=dashboard|settings|analytics  — sets the active view
- * 📖   ?q=<text>                     — sets the search query
- * 📖   ?tier=S&sort=verdict&dir=asc  — compose freely; the same URL is shareable
+ * 📖 URL params (all optional, all shareable):
+ * 📖   ?view=dashboard|settings|analytics|recommend|router|help|changelog
+ * 📖   ?tier=S+|S|A+|A|A-|B+|B|C|all
+ * 📖   ?status=up|down|pending|all
+ * 📖   ?provider=<providerKey>|all
+ * 📖   ?verdict=<verdict>|all
+ * 📖   ?health=<health>|all
+ * 📖   ?sort=<col>&dir=asc|desc
+ * 📖   ?q=<searchText>
+ * 📖   ?toolMode=<toolKey>
+ * 📖   ?palette=open        (when the palette should be open on load)
  *
  * @functions
- *   → useUrlState({ currentView, setCurrentView, filterState }) — hydrates Web state from URL
- *
- * @see ideas/tui-web-feature-parity.md §5.4 — full CLI-flag ↔ URL-param mapping
+ *   → useUrlState({ currentView, setCurrentView, filterState, paletteOpen, setPaletteOpen })
+ *   → buildUrlParams(state) — pure helper exposed for tests
  */
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
+import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS } from './urlState.constants.js'
 
-// 📖 Valid enum values for cycle-style params. Keys here determine which params
-// 📖 get accepted silently vs ignored. Anything not in the list is dropped.
-const VALID_TIERS = new Set(['S+', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'C', 'all'])
-const VALID_STATUS = new Set(['up', 'down', 'pending', 'all'])
-const VALID_SORTS = new Set([
-  'mood', 'idx', 'tier', 'sweScore', 'ctx', 'label', 'origin',
-  'latestPing', 'avg', 'condition', 'verdict', 'stability', 'uptime',
-  'aiLatency', 'tps', 'trend',
-])
-const VALID_VIEWS = new Set(['dashboard', 'settings', 'analytics'])
-const VALID_DIRS = new Set(['asc', 'desc'])
-
-/**
- * 📖 parseUrlParams: extract a normalized set of params from the current URL.
- * 📖 Returns a flat object with camelCase keys, only including recognized params.
- * @returns {{
- *   tier: string|null, status: string|null, provider: string|null,
- *   verdict: string|null, health: string|null,
- *   sort: string|null, dir: string|null, view: string|null, q: string,
- * }}
- */
+// 📖 Read the current URL params as a normalized object. Returns null on SSR
+// 📖 or when the URL is invalid.
 function parseUrlParams() {
   if (typeof window === 'undefined') return null
   const params = new URLSearchParams(window.location.search)
   const out = {}
+  if (params.has('view') && VALID_VIEWS.has(params.get('view'))) out.view = params.get('view')
   if (params.has('tier') && VALID_TIERS.has(params.get('tier'))) out.tier = params.get('tier')
   if (params.has('status') && VALID_STATUS.has(params.get('status'))) out.status = params.get('status')
   if (params.has('provider')) out.provider = params.get('provider')
@@ -54,40 +39,115 @@ function parseUrlParams() {
   if (params.has('health')) out.health = params.get('health')
   if (params.has('sort') && VALID_SORTS.has(params.get('sort'))) out.sort = params.get('sort')
   if (params.has('dir') && VALID_DIRS.has(params.get('dir'))) out.dir = params.get('dir')
-  if (params.has('view') && VALID_VIEWS.has(params.get('view'))) out.view = params.get('view')
   if (params.has('q')) out.q = params.get('q')
+  if (params.has('toolMode')) out.toolMode = params.get('toolMode')
+  if (params.has('palette') && params.get('palette') === 'open') out.palette = 'open'
   return out
 }
 
-/**
- * 📖 useUrlState: hydrate the Web view from the current URL on mount.
- * 📖 M1 = read-only. Pass setters; the hook calls them once on mount with
- * 📖 whatever the URL declares, then leaves the URL alone.
- *
- * 📖 The hook is intentionally non-intrusive: if the URL has no params, it does
- * 📖 nothing. The caller is free to call the setters independently — the URL
- * 📖 simply becomes the *initial* state.
- *
- * @param {{
- *   currentView: string,
- *   setCurrentView: (view: string) => void,
- *   filterState: object | null,  // wired in M2
- * }} opts
- */
-export function useUrlState({ currentView, setCurrentView, filterState }) {
+// 📖 Build a URLSearchParams object from the live state. Pure for testing.
+export function buildUrlParams(state) {
+  const params = new URLSearchParams()
+  if (!state) return params
+  if (state.currentView && state.currentView !== 'dashboard') params.set('view', state.currentView)
+  if (state.filterTier && state.filterTier !== 'all') params.set('tier', state.filterTier)
+  if (state.filterStatus && state.filterStatus !== 'all') params.set('status', state.filterStatus)
+  if (state.filterProvider && state.filterProvider !== 'all') params.set('provider', state.filterProvider)
+  if (state.filterVerdict && state.filterVerdict !== 'all') params.set('verdict', state.filterVerdict)
+  if (state.filterHealth && state.filterHealth !== 'all') params.set('health', state.filterHealth)
+  if (state.sortColumn) {
+    params.set('sort', state.sortColumn)
+    if (state.sortDirection) params.set('dir', state.sortDirection)
+  }
+  if (state.searchQuery) params.set('q', state.searchQuery)
+  if (state.toolMode) params.set('toolMode', state.toolMode)
+  if (state.paletteOpen) params.set('palette', 'open')
+  return params
+}
+
+// 📖 Debounced write-back helper. We don't want to push 5 history entries per
+// 📖 second when the user is typing in the search box.
+function writeUrl(state) {
+  if (typeof window === 'undefined') return
+  const params = buildUrlParams(state)
+  const search = params.toString()
+  const newUrl = search
+    ? `${window.location.pathname}?${search}${window.location.hash}`
+    : `${window.location.pathname}${window.location.hash}`
+  // 📖 replaceState (not pushState) so back/forward don't fill up with
+  // 📖 every keystroke. The current URL still updates visibly.
+  window.history.replaceState({}, '', newUrl)
+}
+
+export function useUrlState({
+  currentView, setCurrentView,
+  filterState = null,
+  paletteOpen = false, setPaletteOpen = () => {},
+  toolMode = null, setToolMode = () => {},
+}) {
+  // 📖 Track a debounce handle so we can coalesce rapid filter / sort changes.
+  const writeTimerRef = useRef(null)
+
+  // 📖 Hydrate from URL on mount, exactly once. We don't want to re-hydrate
+  // 📖 on every render — the user's actions should drive the URL, not vice versa.
+  const hydratedRef = useRef(false)
   useEffect(() => {
+    if (hydratedRef.current) return
+    hydratedRef.current = true
+
     const params = parseUrlParams()
     if (!params) return
 
-    if (params.view && params.view !== currentView) {
+    if (params.view && setCurrentView && params.view !== currentView) {
       setCurrentView(params.view)
     }
+    if (params.tier && filterState?.setFilterTier) filterState.setFilterTier(params.tier)
+    if (params.status && filterState?.setFilterStatus) filterState.setFilterStatus(params.status)
+    if (params.provider && filterState?.setFilterProvider) filterState.setFilterProvider(params.provider)
+    if (params.verdict && filterState?.setFilterVerdict) filterState.setFilterVerdict(params.verdict)
+    if (params.health && filterState?.setFilterHealth) filterState.setFilterHealth(params.health)
+    if (params.sort && filterState?.toggleSort) {
+      // 📖 Re-trigger sort: pass the column to setSortColumn + setSortDirection
+      // 📖 The hook exposes toggleSort which is a 3-state cycle; for hydration
+      // 📖 we want a deterministic state, so we use the lower-level setters.
+      if (filterState.setSortColumn) filterState.setSortColumn(params.sort)
+      if (params.dir && filterState.setSortDirection) filterState.setSortDirection(params.dir)
+    }
+    if (params.q !== undefined && filterState?.setSearchQuery) filterState.setSearchQuery(params.q)
+    if (params.toolMode && setToolMode) setToolMode(params.toolMode)
+    if (params.palette === 'open' && setPaletteOpen) setPaletteOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-    // 📖 Filter hydration is wired through the filterState prop in M2. M1 just
-    // 📖 sets the view; the rest of the URL params act as documentation for
-    // 📖 the user and get the write-back loop fully closed in M2.
-  }, [currentView, setCurrentView, filterState])
+  // 📖 Write-back: any change to currentView / filter / toolMode / palette
+  // 📖 updates the URL. Debounced at 80ms so rapid filter typing doesn't
+  // 📖 thrash the history stack.
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
+    writeTimerRef.current = setTimeout(() => {
+      writeUrl({
+        currentView,
+        filterTier: filterState?.filterTier,
+        filterStatus: filterState?.filterStatus,
+        filterProvider: filterState?.filterProvider,
+        filterVerdict: filterState?.filterVerdict,
+        filterHealth: filterState?.filterHealth,
+        sortColumn: filterState?.sortColumn,
+        sortDirection: filterState?.sortDirection,
+        searchQuery: filterState?.searchQuery,
+        toolMode,
+        paletteOpen,
+      })
+    }, 80)
+    return () => {
+      if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
+    }
+  }, [
+    currentView, paletteOpen, toolMode,
+    filterState?.filterTier, filterState?.filterStatus, filterState?.filterProvider,
+    filterState?.filterVerdict, filterState?.filterHealth,
+    filterState?.sortColumn, filterState?.sortDirection,
+    filterState?.searchQuery,
+  ])
 }
-
-// 📖 Re-export the parser so M2's write-back path can use the same validator.
-export { parseUrlParams, VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS }

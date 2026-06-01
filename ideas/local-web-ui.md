@@ -1,9 +1,13 @@
 # Local Web UI Ideas
 
-> **Status: M1 shipped in v0.5.3 (2026-06-01).** Layout refactor (no sidebar,
-> full-width table, header menu, sticky FilterBar) + favorites + per-row
-> benchmark + theme tri-state + reset view + URL deep-linking + ⌘K palette
-> placeholder are all live. The detailed M2–M5 roadmap below is still
+> **Status: M1 shipped in npm 0.5.5, M2 work complete (waiting for the next
+> release bump).** Layout refactor (no sidebar, full-width table, header
+> menu, sticky FilterBar) + favorites + per-row benchmark + theme tri-state
+> + reset view + URL deep-linking + ⌘K palette placeholder are all live
+> (M1). M2 added: full TUI-aligned command palette, help + changelog
+> modals, update chip + popover, URL write-back, full Settings parity
+> (theme, favorites mode, startup AI scan, shell env, legacy cleanup,
+> per-provider test key). The detailed M3–M5 roadmap below is still
 > tracked in `tui-web-feature-parity.md` §6.
 
 ## Goal

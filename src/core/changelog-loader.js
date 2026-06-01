@@ -20,7 +20,11 @@ import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const CHANGELOG_DIR = join(__dirname, '..', 'changelog')
+// 📖 Resolve the project-root changelog directory. The loader lives at
+// 📖 src/core/, so we walk up two levels to reach the project root, then
+// 📖 into changelog/. (A previous version only walked up one level and
+// 📖 ended up pointing at src/changelog/, which never existed.)
+const CHANGELOG_DIR = join(__dirname, '..', '..', 'changelog')
 
 /**
  * 📖 loadChangelog: Read and parse all per-version changelog files

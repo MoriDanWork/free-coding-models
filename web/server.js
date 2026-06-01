@@ -26,12 +26,21 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exec } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { Server } from 'socket.io'
+
+// 📖 Resolve the local package version for /api/version — same trick the TUI uses.
+const require = createRequire(import.meta.url)
+const { version: LOCAL_VERSION } = require('../package.json')
 
 import { sources, MODELS } from '../sources.js'
 import { loadConfig, getApiKey, saveConfig, isProviderEnabled } from '../src/core/config.js'
 import { ensureFavoritesConfig } from '../src/core/favorites.js'
 import { ping } from '../src/core/ping.js'
+import { loadChangelog } from '../src/core/changelog-loader.js'
+import { checkForUpdateDetailed, checkForUpdate, runUpdate, fetchLastReleaseDate } from '../src/core/updater.js'
+import { syncShellEnv, ensureShellRcSource, removeShellEnv } from '../src/core/shell-env.js'
+import { cleanupLegacyProxyArtifacts } from '../src/core/legacy-proxy-cleanup.js'
 import {
   getAvg, getVerdict, getUptime, getP95, getJitter,
   getStabilityScore,
@@ -516,7 +525,34 @@ async function handleRequest(req, res) {
 
   const url = new URL(req.url, `http://${req.headers.host || `localhost:${DEFAULT_WEB_PORT}`}`)
 
-  const keyMatch = url.pathname.match(/^\/api\/key\/(.+)$/)
+  // 📖 M2: /api/key/:provider/test — matched here (above the switch) so the
+  // 📖 M2 path doesn't conflict with the single-segment key reveal below.
+  // 📖 Mirrors the TUI Settings `T` key behavior: parallel auth probe + chat
+  // 📖 ping through the existing ping() helper.
+  const keyTestMatch = url.pathname.match(/^\/api\/key\/([^/]+)\/test$/)
+  if (keyTestMatch) {
+    if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+    const providerKey = decodeURIComponent(keyTestMatch[1])
+    if (!sources[providerKey]) { sendJson(res, 404, { error: 'Unknown provider' }); return }
+    const apiKey = getApiKey(config, providerKey)
+    if (!apiKey) { sendJson(res, 200, { outcome: 'missing_key', detail: `${providerKey} has no saved API key.` }); return }
+    try {
+      const result = await ping(apiKey, '', providerKey, sources[providerKey].url, { silent: true })
+      if (result?.code === 200 || result?.code === '200') { sendJson(res, 200, { outcome: 'ok', code: 200 }); return }
+      if (result?.code === 401 || result?.code === '401' || result?.code === 403 || result?.code === '403') {
+        sendJson(res, 200, { outcome: 'auth_error', code: result.code }); return
+      }
+      sendJson(res, 200, { outcome: 'fail', code: result?.code ?? 'ERR', detail: 'Probe did not return a 2xx' })
+    } catch (err) {
+      sendJson(res, 200, { outcome: 'fail', detail: err.message || 'Probe failed' })
+    }
+    return
+  }
+
+  // 📖 Single-provider key reveal endpoint. The M2 /api/key/:provider/test
+  // 📖 route is matched above (above the switch) and uses a stricter regex
+  // 📖 (one segment, not two) so the two routes coexist cleanly.
+  const keyMatch = url.pathname.match(/^\/api\/key\/([^/]+)$/)
   if (keyMatch) {
     const providerKey = decodeURIComponent(keyMatch[1])
     if (!sources[providerKey]) {
@@ -752,6 +788,115 @@ async function handleRequest(req, res) {
         })
 
         sendJson(res, 202, { started: true, total: modelsToBenchmark.length })
+        return
+      }
+
+      // ── M2: /api/version — local vs latest + lastRelease date ─────────────
+      case '/api/version': {
+        try {
+          const { latestVersion, error } = await checkForUpdateDetailed()
+          const lastReleaseDate = await fetchLastReleaseDate()
+          sendJson(res, 200, {
+            local: LOCAL_VERSION,
+            latest: latestVersion,
+            lastReleaseDate,
+            error: error || null,
+          })
+        } catch (err) {
+          sendJson(res, 200, { local: LOCAL_VERSION, latest: null, lastReleaseDate: null, error: err.message || 'update check failed' })
+        }
+        return
+      }
+
+      // ── M2: /api/update/check — force a fresh registry check ──────────────
+      case '/api/update/check': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const { latestVersion, error } = await checkForUpdateDetailed()
+        sendJson(res, 200, { latest: latestVersion, error: error || null })
+        return
+      }
+
+      // ── M2: /api/update/run — spawn the package manager upgrade ──────────
+      case '/api/update/run': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const target = typeof body?.version === 'string' && body.version ? body.version : null
+        // 📖 Mirrors the TUI's `Shift+U` behavior: install + tell the user to
+        // 📖 restart the server. We don't kill the in-process server from
+        // 📖 here because that would interrupt every connected client.
+        if (target) {
+          runUpdate(target)
+          sendJson(res, 200, { started: true, version: target, message: 'Update initiated — restart the dashboard to apply.' })
+        } else {
+          const { latestVersion } = await checkForUpdateDetailed()
+          if (!latestVersion) { sendJson(res, 404, { error: 'No update available' }); return }
+          runUpdate(latestVersion)
+          sendJson(res, 200, { started: true, version: latestVersion, message: 'Update initiated — restart the dashboard to apply.' })
+        }
+        return
+      }
+
+      // ── M2: /api/changelog — parsed changelog directory ─────────────────
+      case '/api/changelog': {
+        sendJson(res, 200, loadChangelog())
+        return
+      }
+
+      // ── M2: /api/settings/feature — single-feature toggle endpoint ───────
+      case '/api/settings/feature': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        if (!body || typeof body !== 'object' || !body.feature) {
+          sendJson(res, 400, { error: 'Missing "feature" key' }); return
+        }
+        if (!config.settings || typeof config.settings !== 'object') config.settings = {}
+        const before = config.settings[body.feature]
+        // 📖 Boolean features are toggled unless the caller passes an explicit value.
+        if (body.value !== undefined) {
+          // 📖 Explicit value (string / boolean / number) always wins. Used for
+          // 📖 things like theme='auto'|'dark'|'light' where a string payload
+          // 📖 is the right shape.
+          config.settings[body.feature] = body.value
+        } else if (typeof before === 'boolean') {
+          // 📖 No explicit value → toggle for boolean features
+          // 📖 (e.g. favoritesPinnedAndSticky).
+          config.settings[body.feature] = !before
+        } else {
+          config.settings[body.feature] = true
+        }
+        const result = saveConfig(config)
+        if (!result.success) { sendJson(res, 500, { error: result.error || 'Save failed' }); return }
+        sendJson(res, 200, { success: true, feature: body.feature, value: config.settings[body.feature] })
+        return
+      }
+
+      // ── M2: /api/shell-env/toggle — flip shell env export for the user ──
+      case '/api/shell-env/toggle': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const enable = typeof body?.enabled === 'boolean' ? body.enabled : undefined
+        if (!config.settings || typeof config.settings !== 'object') config.settings = {}
+        if (enable === undefined) {
+          config.settings.shellEnvEnabled = !config.settings.shellEnvEnabled
+        } else {
+          config.settings.shellEnvEnabled = enable
+        }
+        if (config.settings.shellEnvEnabled) {
+          syncShellEnv(config)
+          ensureShellRcSource()
+        } else {
+          removeShellEnv()
+        }
+        saveConfig(config)
+        sendJson(res, 200, { success: true, enabled: config.settings.shellEnvEnabled })
+        return
+      }
+
+      // ── M2: /api/legacy-cleanup — run the discontinued-proxy cleanup ─────
+      case '/api/legacy-cleanup': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const summary = cleanupLegacyProxyArtifacts()
+        sendJson(res, 200, summary)
         return
       }
 

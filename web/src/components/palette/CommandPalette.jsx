@@ -1,72 +1,152 @@
 /**
  * @file web/src/components/palette/CommandPalette.jsx
- * @description ⌘K / Ctrl+P command palette — M1 placeholder, M2 ships the full version.
- * 📖 M1 keeps the modal opening, the ⌘K wiring, and a small launcher that exposes
- * 📖 the most-used actions (cycle theme, reset view, navigate views, change ping mode).
- * 📖 M2 will replace this with the TUI-aligned palette that consumes
- * 📖 `src/tui/command-palette.js` via `getCommandPaletteSnapshot()` for full parity.
+ * @description ⌘K / Ctrl+P command palette — M2 full version, fed by the TUI registry.
+ * 📖 M1 shipped a placeholder; this version pulls entries from
+ * 📖 `src/tui/command-palette.js` (the TUI's source of truth) so the Web and
+ * 📖 TUI palettes always show the same set of commands. Web-only commands
+ * 📖 (open modal pages, set the theme, open the help / changelog / etc.) are
+ * 📖 appended on top of the TUI list.
+ *
+ * 📖 The palette is a flat searchable list — the TUI's hierarchical category
+ * 📖 tree is preserved as a leading "section" label per entry. We fuzzy-search
+ * 📖 using the TUI's `filterCommandPaletteEntries()` so ranking is identical
+ * 📖 across both surfaces.
  *
  * @functions
- *   → CommandPalette — main modal component
+ *   → CommandPalette → main modal component
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { IconSearch, IconCommand, IconBolt, IconArrowRight, IconArrowsExchange } from '@tabler/icons-react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { IconSearch, IconCommand, IconBolt, IconArrowsExchange, IconExternalLink } from '@tabler/icons-react'
+import { buildCommandPaletteEntries, filterCommandPaletteEntries } from '../../../../src/tui/command-palette.js'
 import styles from './CommandPalette.module.css'
+
+const SECTION_META = {
+  // TUI categories → emoji + label
+  'filter':     { icon: '🔍', label: 'Filter' },
+  'sort':       { icon: '📶', label: 'Sort' },
+  'action':     { icon: '⚙️', label: 'Action' },
+  'page':       { icon: '📄', label: 'Page' },
+  'update':     { icon: '⬆️', label: 'Update' },
+  // TUI 'tool' sub-categories
+  'tool':       { icon: '🧰', label: 'Tool' },
+}
 
 const PING_MODE_CYCLE = ['speed', 'normal', 'slow', 'forced']
 
+// 📖 Web-only entries (the Web has modals, not TUI overlays, so the palette
+// 📖 has a few commands the TUI doesn't). They are appended to the TUI registry
+// 📖 after a `Web` separator so the two surfaces stay easy to compare.
+function buildWebEntries(deps) {
+  const { onCycleTheme, onResetView, onSetPingMode, onOpenChangelog, theme, pingMode, modelsCount, onExport } = deps
+  const web = [
+    // Pages (open as modals)
+    { id: 'page.help', section: 'page', label: 'Open Help', keywords: ['help', 'shortcuts', 'reference'], run: () => deps.onOpenHelp?.() },
+    { id: 'page.changelog', section: 'page', label: 'Open Changelog', keywords: ['changelog', 'release', 'history', 'version'], run: () => onOpenChangelog?.() },
+    { id: 'page.install-endpoints', section: 'page', label: 'Open Install Endpoints (M4)', keywords: ['install', 'endpoint', 'tool', 'configure'], disabled: true },
+    { id: 'page.installed-models', section: 'page', label: 'Open Installed Models (M4)', keywords: ['installed', 'models', 'tools'], disabled: true },
+
+    // Theme
+    { id: 'action.theme.cycle', section: 'action', label: `Cycle theme (current: ${theme})`, keywords: ['theme', 'dark', 'light', 'auto'], run: onCycleTheme },
+
+    // Reset
+    { id: 'action.reset.view', section: 'action', label: 'Reset view (filters + sort)', keywords: ['reset', 'view', 'clear', 'filters', 'sort'], run: onResetView },
+
+    // Ping mode (the TUI has these too; Web keeps them for parity)
+    { id: 'action.ping.speed',  section: 'action', label: 'Ping mode → Speed (2s)',  keywords: ['ping', 'mode', 'speed', 'fast', '2s'], run: () => onSetPingMode?.('speed') },
+    { id: 'action.ping.normal', section: 'action', label: 'Ping mode → Normal (10s)', keywords: ['ping', 'mode', 'normal', '10s', 'default'], run: () => onSetPingMode?.('normal') },
+    { id: 'action.ping.slow',   section: 'action', label: 'Ping mode → Slow (30s)',   keywords: ['ping', 'mode', 'slow', '30s', 'idle'], run: () => onSetPingMode?.('slow') },
+    { id: 'action.ping.forced', section: 'action', label: 'Ping mode → Forced (4s)',  keywords: ['ping', 'mode', 'forced', '4s'], run: () => onSetPingMode?.('forced') },
+
+    // Export
+    { id: 'action.export', section: 'action', label: 'Export models…', keywords: ['export', 'download', 'json', 'csv', 'clipboard'], run: onExport },
+  ]
+  // TUI palette entries with a 'page' type → route through the same Web pages.
+  return web
+}
+
 export default function CommandPalette({
   onClose, onNavigate, onCycleTheme, onResetView,
-  onSetPingMode, onToast, onExport,
-  currentView, theme, pingMode,
+  onSetPingMode, onOpenHelp, onOpenChangelog, onOpenCommandPalette,
+  onToast, onExport, currentView, theme, pingMode, models,
+  updateAvailable, latestVersion, onRunUpdate,
 }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef(null)
   const listRef = useRef(null)
 
-  // 📖 Static command list for M1 — these are the universal "no matter what view
-  // 📖 I'm in, this is what I want" actions. M2 will replace this with the TUI
-  // 📖 registry import.
-  const commands = useMemo(() => {
-    const items = [
-      { id: 'view.dashboard',   label: 'Go to Dashboard',     icon: IconArrowRight, run: () => onNavigate('dashboard') },
-      { id: 'view.settings',    label: 'Go to Settings',      icon: IconArrowRight, run: () => onNavigate('settings') },
-      { id: 'view.analytics',   label: 'Go to Analytics',     icon: IconArrowRight, run: () => onNavigate('analytics') },
-      { id: 'view.recommend',   label: 'Open Smart Recommend (coming in M3)', icon: IconArrowRight, disabled: true },
-      { id: 'view.router',      label: 'Open Router Dashboard (coming in M4)', icon: IconArrowRight, disabled: true },
-      { id: 'view.help',        label: 'Open Help (coming in M2)', icon: IconArrowRight, disabled: true },
-      { id: 'view.changelog',   label: 'Open Changelog (coming in M2)', icon: IconArrowRight, disabled: true },
-      { id: 'action.cycle-theme', label: `Cycle theme (current: ${theme})`, icon: IconArrowsExchange, run: onCycleTheme },
-      { id: 'action.reset-view',  label: 'Reset view (filters + sort)', icon: IconArrowsExchange, run: onResetView },
-      { id: 'action.ping.speed',  label: 'Ping mode → Speed (2s)',  icon: IconBolt, run: () => onSetPingMode('speed') },
-      { id: 'action.ping.normal', label: 'Ping mode → Normal (10s)', icon: IconBolt, run: () => onSetPingMode('normal') },
-      { id: 'action.ping.slow',   label: 'Ping mode → Slow (30s)',   icon: IconBolt, run: () => onSetPingMode('slow') },
-      { id: 'action.ping.forced', label: 'Ping mode → Forced (4s)',  icon: IconBolt, run: () => onSetPingMode('forced') },
-      { id: 'action.export',      label: 'Export models…', icon: IconArrowRight, run: onExport },
-    ]
-    return items
-  }, [onNavigate, onCycleTheme, onResetView, onSetPingMode, onExport, theme])
+  // 📖 Build the combined list once per render. TUI registry first (so
+  // 📖 its section labels come through), then Web-only entries.
+  const allCommands = useMemo(() => {
+    const tuiEntries = buildCommandPaletteEntries(models || []).map((entry) => {
+      // 📖 The TUI palette doesn't carry a 'section' field; derive one from
+      // 📖 the entry id so the Web list can show a category label.
+      let section = 'action'
+      if (entry.id.startsWith('filter-')) section = 'filter'
+      else if (entry.id.startsWith('sort-')) section = 'sort'
+      else if (entry.id.startsWith('action-')) section = 'action'
+      else if (entry.id.startsWith('action-set-tool-')) section = 'tool'
+      else if (entry.id.startsWith('page-') || entry.id === 'open-settings' || entry.id === 'open-help' || entry.id === 'open-changelog') section = 'page'
+      return { ...entry, section }
+    })
+    const webEntries = buildWebEntries({
+      onCycleTheme, onResetView, onSetPingMode,
+      onOpenChangelog, onOpenHelp, theme, pingMode, modelsCount: models?.length ?? 0, onExport,
+    })
+    // 📖 Update banner entry (only when an update is available) — mirrors
+    // 📖 the TUI palette's "auto-prepended when newer version known" rule.
+    const updateEntries = []
+    if (updateAvailable && latestVersion) {
+      updateEntries.push({
+        id: 'action.update.run', section: 'update',
+        label: `⬆️ UPDATE NOW — v${latestVersion} available (recommended!)`,
+        keywords: ['update', 'upgrade', 'version', 'install', 'new'],
+        run: () => onRunUpdate?.(),
+      })
+    }
+    return [...updateEntries, ...tuiEntries, ...webEntries]
+  }, [models, theme, pingMode, onCycleTheme, onResetView, onSetPingMode, onOpenChangelog, onOpenHelp, onExport, updateAvailable, latestVersion, onRunUpdate])
 
-  // 📖 Fuzzy filter: substring match (case-insensitive). Good enough for M1's small set.
+  // 📖 Filter using the TUI's exact fuzzy rank so the two palettes are 1:1.
+  // 📖 Empty query → return everything; non-empty → return ranked matches.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return commands
-    return commands.filter((cmd) => cmd.label.toLowerCase().includes(q))
-  }, [commands, query])
+    if (!query.trim()) return allCommands
+    return filterCommandPaletteEntries(allCommands, query)
+  }, [allCommands, query])
 
-  // 📖 Focus the search input on open.
+  // 📖 Group filtered commands by section so the list reads top-down in
+  // 📖 the same order as the TUI's hierarchical view.
+  const grouped = useMemo(() => {
+    const groups = new Map()
+    for (const cmd of filtered) {
+      if (!groups.has(cmd.section)) groups.set(cmd.section, [])
+      groups.get(cmd.section).push(cmd)
+    }
+    return Array.from(groups.entries())
+  }, [filtered])
+
+  // 📖 Build a flat list for keyboard navigation. Cursor is an index into
+  // 📖 this flat list, not the grouped structure.
+  const flatList = useMemo(() => grouped.flatMap(([, items]) => items), [grouped])
+
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  // 📖 Keyboard handler — Esc, arrows, Enter.
+  // 📖 Clamp cursor whenever the result set changes.
+  useEffect(() => {
+    if (cursor >= flatList.length) setCursor(0)
+  }, [flatList, cursor])
+
+  // 📖 Keyboard handler: Esc, arrows, Enter, Tab (expand/collapse on TUI;
+  // 📖 the Web list is flat so Tab cycles focus to the next button — and
+  // 📖 Enter runs the highlighted command).
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setCursor((c) => Math.min(filtered.length - 1, c + 1))
+        setCursor((c) => Math.min(flatList.length - 1, c + 1))
         return
       }
       if (e.key === 'ArrowUp') {
@@ -76,21 +156,77 @@ export default function CommandPalette({
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const item = filtered[cursor]
-        if (item && !item.disabled) {
-          item.run?.()
-          onClose()
-        } else if (item?.disabled) {
-          onToast?.(`${item.label} is not available yet.`, 'info')
-        }
+        const item = flatList[cursor]
+        if (!item) return
+        if (item.disabled) { onToast?.(`${item.label} is not available yet.`, 'info'); return }
+        runCommand(item)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [filtered, cursor, onClose, onToast])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatList, cursor, onClose, onToast])
 
-  // 📖 Reset cursor when query changes.
-  useEffect(() => { setCursor(0) }, [query])
+  // 📖 When a command runs, the palette closes. The handler lives in a
+  // 📖 useCallback so the keyboard handler doesn't recreate on every render.
+  const runCommand = useCallback((item) => {
+    // 📖 TUI registry entries carry the action in their own `id` form. We
+    // 📖 translate the most common ones to the Web's React callbacks.
+    // 📖 For entries that don't have a Web equivalent (e.g. tool cycle, which
+    // 📖 ships in M3), we route the user to the right header menu.
+    const id = item.id
+    if (id === 'open-settings') { onNavigate?.('settings'); onClose(); return }
+    if (id === 'open-help') { onOpenHelp?.(); onClose(); return }
+    if (id === 'open-changelog') { onOpenChangelog?.(); onClose(); return }
+    if (id === 'open-recommend') { onToast?.('Recommend arrives in M3', 'info'); onClose(); return }
+    if (id === 'open-router-dashboard') { onToast?.('Router dashboard arrives in M4', 'info'); onClose(); return }
+    if (id === 'open-installed-models') { onToast?.('Installed Models arrives in M4', 'info'); onClose(); return }
+    if (id === 'open-install-endpoints') { onToast?.('Install Endpoints arrives in M4', 'info'); onClose(); return }
+    if (id === 'action-update-now') { onRunUpdate?.(); onClose(); return }
+    if (id === 'action-cycle-theme') { onCycleTheme?.(); onClose(); return }
+    if (id === 'action-reset-view') { onResetView?.(); onClose(); return }
+    if (id === 'action-cycle-ping-mode') {
+      const idx = PING_MODE_CYCLE.indexOf(pingMode)
+      onSetPingMode?.(PING_MODE_CYCLE[(idx + 1) % PING_MODE_CYCLE.length])
+      onClose()
+      return
+    }
+    if (id === 'action-cycle-tool-mode') { onToast?.('Tool mode picker arrives in M3', 'info'); onClose(); return }
+    if (id === 'action-toggle-favorite') { onToast?.('Press F on a model row in the table.', 'info'); onClose(); return }
+    if (id === 'action-toggle-favorite-mode') { onToast?.('Set the favorites display mode in Settings (M2).', 'info'); onClose(); return }
+    if (id === 'action-export') { onExport?.(); onClose(); return }
+    if (id === 'action-benchmark-row') { onToast?.('Click any AI Lat. cell to benchmark the highlighted row.', 'info'); onClose(); return }
+
+    // 📖 Filter / sort / ping mode commands are dispatched to the same Web
+    // 📖 callbacks the TUI palette uses (cycle / set). For per-model filter
+    // 📖 entries the user typed, we just apply a text filter.
+    if (id === 'filter-provider-cycle') { onToast?.('Use the Provider dropdown in the FilterBar.', 'info'); onClose(); return }
+    if (id.startsWith('filter-tier-')) { onToast?.('Tier filter — use the Tier chip row in the FilterBar.', 'info'); onClose(); return }
+    if (id.startsWith('filter-provider-')) { onToast?.('Provider filter — use the Provider dropdown.', 'info'); onClose(); return }
+    if (id === 'filter-configured-toggle') { onToast?.('Use the Visibility dropdown in the FilterBar.', 'info'); onClose(); return }
+    if (id.startsWith('sort-')) { onToast?.('Sort — click the column header in the table.', 'info'); onClose(); return }
+    if (id === 'action-set-ping-speed')  { onSetPingMode?.('speed');  onClose(); return }
+    if (id === 'action-set-ping-normal') { onSetPingMode?.('normal'); onClose(); return }
+    if (id === 'action-set-ping-slow')   { onSetPingMode?.('slow');   onClose(); return }
+    if (id === 'action-set-ping-forced') { onSetPingMode?.('forced'); onClose(); return }
+
+    // 📖 Fallback for any TUI command the Web hasn't wired yet.
+    if (typeof item.run === 'function') {
+      item.run()
+      onClose()
+      return
+    }
+    onToast?.(`${item.label} is not wired on the Web yet.`, 'info')
+    onClose()
+  }, [onNavigate, onClose, onToast, onCycleTheme, onResetView, onSetPingMode, onOpenHelp, onOpenChangelog, onRunUpdate, onExport, pingMode])
+
+  // 📖 Keep the focused item in view as the cursor moves. Mirrors the TUI
+  // 📖 palette's "follow the selection" behavior.
+  useEffect(() => {
+    if (!listRef.current) return
+    const el = listRef.current.querySelector(`[data-cmd-index="${cursor}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [cursor])
 
   return (
     <div className={styles.backdrop} onClick={onClose}>
@@ -100,7 +236,7 @@ export default function CommandPalette({
           <input
             ref={inputRef}
             className={styles.input}
-            placeholder="Type a command…"
+            placeholder="Type a command… (filters, sorts, tools, theme, ping, export)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
@@ -108,37 +244,55 @@ export default function CommandPalette({
           <span className={styles.kbd}><IconCommand size={10} stroke={1.5} />K</span>
         </div>
 
-        <ul className={styles.list} ref={listRef} role="listbox">
-          {filtered.length === 0 && (
-            <li className={styles.empty}>No matching command.</li>
+        <div className={styles.list} ref={listRef} role="listbox">
+          {flatList.length === 0 && (
+            <div className={styles.empty}>No matching command.</div>
           )}
-          {filtered.map((cmd, idx) => {
-            const Icon = cmd.icon
+          {grouped.map(([section, items]) => {
+            const meta = SECTION_META[section] || { icon: '•', label: section }
             return (
-              <li
-                key={cmd.id}
-                className={`${styles.item} ${idx === cursor ? styles.itemActive : ''} ${cmd.disabled ? styles.itemDisabled : ''}`}
-                onClick={() => {
-                  if (cmd.disabled) { onToast?.(`${cmd.label} is not available yet.`, 'info'); return }
-                  cmd.run?.()
-                  onClose()
-                }}
-                onMouseEnter={() => setCursor(idx)}
-                role="option"
-                aria-selected={idx === cursor}
-              >
-                <Icon size={14} stroke={1.5} className={styles.itemIcon} />
-                <span className={styles.itemLabel}>{cmd.label}</span>
-                {idx === cursor && <span className={styles.itemEnter}>↵</span>}
-              </li>
+              <div key={section} className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <span className={styles.sectionIcon}>{meta.icon}</span>
+                  <span>{meta.label}</span>
+                </div>
+                {items.map((cmd) => {
+                  // 📖 Flat index across all groups so the keyboard cursor is stable.
+                  const flatIdx = flatList.indexOf(cmd)
+                  const isActive = flatIdx === cursor
+                  return (
+                    <button
+                      key={cmd.id}
+                      data-cmd-index={flatIdx}
+                      className={`${styles.item} ${isActive ? styles.itemActive : ''} ${cmd.disabled ? styles.itemDisabled : ''}`}
+                      onClick={() => runCommand(cmd)}
+                      onMouseEnter={() => setCursor(flatIdx)}
+                      role="option"
+                      aria-selected={isActive}
+                      aria-disabled={cmd.disabled ? 'true' : undefined}
+                    >
+                      <span className={styles.itemLabel}>
+                        {cmd.label}
+                        {cmd.shortcut && <span className={styles.shortcut}>{cmd.shortcut}</span>}
+                      </span>
+                      {cmd.description && <span className={styles.itemDesc}>{cmd.description}</span>}
+                      {isActive && <span className={styles.itemEnter}>↵</span>}
+                    </button>
+                  )
+                })}
+              </div>
             )
           })}
-        </ul>
+        </div>
 
         <div className={styles.footer}>
           <span><kbd>↑↓</kbd> navigate</span>
           <span><kbd>↵</kbd> select</span>
           <span><kbd>Esc</kbd> close</span>
+          <span className={styles.footerRight}>
+            Powered by the TUI command registry — 1:1 parity
+            <IconExternalLink size={10} stroke={1.5} style={{ marginLeft: 4 }} />
+          </span>
         </div>
       </div>
     </div>

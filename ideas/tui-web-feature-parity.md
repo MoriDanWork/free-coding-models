@@ -16,8 +16,8 @@
 
 | Milestone | Status | Started | Done | Notes |
 |---|---|---|---|---|
-| **M1** — Layout refactor + engine-quick wins | ✅ **DONE** | 2026-06-01 | 2026-06-01 | All 12 sub-tasks shipped; +1 backend exception (see below) |
-| M2 — Settings parity + palette + URL write-back | ⏳ pending | — | — | |
+| **M1** — Layout refactor + engine-quick wins | ✅ **DONE** | 2026-06-01 | 2026-06-01 | Shipped in npm 0.5.5 |
+| **M2** — Settings parity + palette + URL write-back | ✅ **DONE** | 2026-06-01 | 2026-06-01 | Full Settings parity, full palette (TUI registry), help + changelog modals, update chip, URL write-back. 451 tests pass. |
 | M3 — Smart Recommend + Tool mode/launch | ⏳ pending | — | — | |
 | M4 — Router + Token Usage + Installed Models + Install Endpoints | ⏳ pending | — | — | |
 | M5 — Polish, a11y, tests, release | ⏳ pending | — | — | |
@@ -46,6 +46,33 @@
 - [x] `pnpm test` green — 440 tests pass (was 434 before M1)
 - [x] `pnpm build:web` clean
 - [x] Live UI verified in Chrome DevTools: header nav, overflow menu, ⌘K palette, all filter chips render correctly
+
+### M2 detailed progress
+
+- [x] **Server endpoints** (all wired through the same `~/.free-coding-models.json` the TUI uses)
+  - [x] `GET /api/version` — returns `{ local, latest, lastReleaseDate, error }`
+  - [x] `POST /api/update/check` — force-fresh npm registry check
+  - [x] `POST /api/update/run` — spawns the package manager upgrade
+  - [x] `GET /api/changelog` — returns the parsed changelog directory (142 versions)
+  - [x] `POST /api/settings/feature` — single-feature toggle (handles boolean + string values)
+  - [x] `POST /api/key/:provider/test` — per-provider auth probe + chat ping (TUI `T` key parity)
+  - [x] `POST /api/shell-env/toggle` — enable/disable shell env export
+  - [x] `POST /api/legacy-cleanup` — run the discontinued-proxy cleanup
+- [x] **Pre-existing bug fix** — `src/core/changelog-loader.js` path was `src/changelog/`, now correctly `../../changelog/` (project root). The TUI's changelog overlay was silently broken.
+- [x] **React components**
+  - [x] `useChangelog` hook — wraps `/api/changelog` with sortedVersions + getVersion helpers
+  - [x] `useUpdateChecker` hook — polls `/api/version` every 5 min, exposes `updateAvailable` + `runUpdate`
+  - [x] `useUrlState` hook — full read + write-back, debounced 80ms, `buildUrlParams` pure helper exported for tests
+  - [x] `HelpView` modal — 11 sections, live search bar, mirrors TUI help content
+  - [x] `ChangelogView` modal — two-phase (index + details), B-key to go back, deep-link to a specific version
+  - [x] `UpdateChip` — header chip + popover with "Update now" + "What's new"
+  - [x] **Full `CommandPalette`** — consumes `buildCommandPaletteEntries` from `src/tui/command-palette.js` (1:1 TUI registry), fuzzy-matches via `filterCommandPaletteEntries`, groups by section, handles TUI commands that don't have a Web equivalent with a friendly "arrives in M3/M4" toast
+  - [x] **Full `SettingsView` parity** — theme dropdown, favorites mode toggle, startup AI speed scan toggle, shell env toggle, legacy proxy cleanup button, open Changelog link, update row, per-provider "Test" key button with outcome badge
+- [x] **App.jsx wiring** — header modals (help / changelog), UpdateChip slot, URL state hydration, Esc closes any open overlay
+- [x] **Tests** — `buildUrlParams` (4 cases), validation constants (3 cases), hook import smoke tests (3 cases) = **+10 new tests, 451 total**
+- [x] `pnpm test` green
+- [x] `pnpm build:web` clean
+- [x] All 8 new endpoints verified via curl (theme / feature / cleanup / key test / shell-env / version / changelog / update)
 
 ### Post-M1 layout polish (date: 2026-06-01)
 

@@ -1,24 +1,30 @@
 /**
  * @file web/src/App.jsx
  * @description Root application component — orchestrates all views, header nav, Socket.IO
- * connection, toast notifications, and global state. M1 layout refactor: no more left
- * sidebar. Navigation lives in the Header (always-visible nav + overflow menu).
+ * connection, toast notifications, and global state. M2 layout: no sidebar, header
+ * menu + ⌘K palette, full Settings parity, Help + Changelog modals, UpdateChip,
+ * URL write-back.
  *
- * 📖 M1 also wires in:
- *   - StatsBar above the ModelTable (was orphaned)
- *   - URL deep-linking (read-only — ?tier=…&sort=…&origin=…)
- *   - ⌘K command palette (placeholder modal for M1, real palette in M2)
- *   - Favorites hook (per-row star + reorder + display mode toggle)
- *   - Per-model benchmark button (uses existing /api/benchmark)
+ * 📖 M2 additions on top of M1:
+ * 📖   - Full command palette (TUI registry via `buildCommandPaletteEntries`)
+ * 📖   - HelpView modal (TUI parity help)
+ * 📖   - ChangelogView modal (2-phase: index + details)
+ * 📖   - UpdateChip in header (polls /api/version, popover with "Update now" + "What's new")
+ * 📖   - URL write-back (every filter / sort / view / palette / toolMode change
+ * 📖     updates the URL via history.replaceState, debounced at 80ms)
+ * 📖   - New Settings rows: theme dropdown, favorites mode toggle, startup AI scan
+ * 📖     toggle, shell-env toggle, legacy proxy cleanup button, open Changelog link,
+ * 📖     update status row, per-provider test key button
  *
  * @functions App → root component with all state and layout composition
  */
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useSocket } from './hooks/useSocket.js'
 import { useFilter } from './hooks/useFilter.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useFavorites } from './hooks/useFavorites.js'
 import { useUrlState } from './hooks/useUrlState.js'
+import { useUpdateChecker } from './hooks/useUpdateChecker.js'
 import Header from './components/layout/Header.jsx'
 import Footer from './components/layout/Footer.jsx'
 import FilterBar from './components/dashboard/FilterBar.jsx'
@@ -28,69 +34,85 @@ import ExportModal from './components/dashboard/ExportModal.jsx'
 import SettingsView from './components/settings/SettingsView.jsx'
 import AnalyticsView from './components/analytics/AnalyticsView.jsx'
 import CommandPalette from './components/palette/CommandPalette.jsx'
+import HelpView from './components/help/HelpView.jsx'
+import ChangelogView from './components/changelog/ChangelogView.jsx'
+import UpdateChip from './components/update/UpdateChip.jsx'
 import ToastContainer from './components/atoms/ToastContainer.jsx'
 
 let toastIdCounter = 0
 
-// 📖 Map current view to the header nav id. M1 only ships dashboard/settings/analytics;
-// 📖 recommend/router/help/changelog/install-endpoints/installed-models are wired but
-// 📖 still show a "Coming in M2/M3/M4" toast from the header for now.
 const VIEW_TO_NAV = {
   dashboard: 'dashboard',
   settings: 'settings',
   analytics: 'analytics',
   recommend: 'recommend',
   router: 'router',
-  help: 'help',
-  changelog: 'changelog',
-  'install-endpoints': 'install-endpoints',
-  'installed-models': 'installed-models',
 }
 
 export default function App() {
-  const { models, connected, nextPingAt, isPinging, pingMode, globalBenchmarkRunning, globalBenchmarkTotal, globalBenchmarkCompleted, updateStatus } = useSocket()
+  const { models, connected, nextPingAt, isPinging, pingMode, globalBenchmarkRunning, globalBenchmarkTotal, globalBenchmarkCompleted } = useSocket()
   const { theme, cycle: cycleTheme } = useTheme()
   const [currentView, setCurrentView] = useState('dashboard')
   const [selectedModel, setSelectedModel] = useState(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [changelogOpen, setChangelogOpen] = useState(false)
+  const [changelogDefaultVersion, setChangelogDefaultVersion] = useState(null)
+  const [toolMode, setToolMode] = useState(null) // 📖 M3 will use this; the row highlighter already keys off it
   const [toasts, setToasts] = useState([])
   const lastActivityRef = useRef(Date.now())
-
-  // 📖 URL deep-linking (M1 = read-only hydration on mount; write-back lands in M2).
-  // 📖 Syncs `currentView`, filter state, and selection from query params so users
-  // 📖 can share pre-configured dashboard URLs.
-  useUrlState({
-    currentView, setCurrentView,
-    filterState: null, // wired in M2
-  })
 
   const {
     filtered,
     filterTier, setFilterTier,
     filterStatus, setFilterStatus,
     filterProvider, setFilterProvider,
-    searchQuery, setSearchQuery,
-    sortColumn, sortDirection, toggleSort,
     filterVerdict, setFilterVerdict,
     filterHealth, setFilterHealth,
     visibilityMode, setVisibilityMode,
+    searchQuery, setSearchQuery,
     customTextFilter, setCustomTextFilter,
+    sortColumn, sortDirection, setSortColumn, setSortDirection, toggleSort,
     resetView,
   } = useFilter(models)
 
-  // 📖 Favorites — single source of truth shared with the TUI via ~/.free-coding-models.json.
+  // 📖 URL deep-linking (M2 = read + write). Hydrates on mount, then pushes
+  // 📖 every change back via history.replaceState (debounced 80ms).
+  useUrlState({
+    currentView, setCurrentView,
+    filterState: {
+      filterTier, setFilterTier,
+      filterStatus, setFilterStatus,
+      filterProvider, setFilterProvider,
+      filterVerdict, setFilterVerdict,
+      filterHealth, setFilterHealth,
+      sortColumn, sortDirection, setSortColumn, setSortDirection, toggleSort,
+      setSearchQuery,
+      filterState: null, // sentinel; useFilter doesn't expose this name
+      searchQuery,
+    },
+    paletteOpen, setPaletteOpen,
+    toolMode, setToolMode,
+  })
+
+  // 📖 Favorites — single source of truth shared with the TUI.
   const favorites = useFavorites({ models })
 
+  // 📖 Update checker (5-minute poll). Returns `updateAvailable` for the chip.
+  const {
+    localVersion, latestVersion, updateAvailable, runUpdate, checkNow, error: updateError,
+  } = useUpdateChecker({ onToast: addToastInternal })
+
   // 📖 Build the provider list for the FilterBar dropdown.
-  const providers = (() => {
+  const providers = useMemo(() => {
     const map = {}
     models.forEach((m) => {
       if (!map[m.providerKey]) map[m.providerKey] = { key: m.providerKey, name: m.origin, count: 0 }
       map[m.providerKey].count++
     })
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name))
-  })()
+  }, [models])
 
   // ── Global benchmark (AI Speed Test) ─────────────────────────────────────
   const handleBenchmark = useCallback(async () => {
@@ -118,7 +140,7 @@ export default function App() {
       })
       if (!resp.ok && resp.status !== 202) {
         const err = await resp.json().catch(() => ({}))
-        addToast?.(`Benchmark failed: ${err?.error || resp.statusText}`, 'error')
+        addToastInternal?.(`Benchmark failed: ${err?.error || resp.statusText}`, 'error')
       }
     } catch (err) {
       console.error('[Benchmark] per-row failed:', err.message)
@@ -126,14 +148,14 @@ export default function App() {
   }, [])
 
   // ── Toast helpers ────────────────────────────────────────────────────────
-  const addToast = useCallback((message, type = 'info') => {
+  function addToastInternal(message, type = 'info') {
     const id = ++toastIdCounter
     setToasts((prev) => [...prev, { id, message, type }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 4000)
-  }, [])
-
+  }
+  const addToast = useCallback(addToastInternal, [])
   const dismissToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
@@ -143,10 +165,9 @@ export default function App() {
     setSelectedModel(model)
     lastActivityRef.current = Date.now()
   }, [])
-
   const handleCloseDetail = useCallback(() => setSelectedModel(null), [])
 
-  // ── Ping mode change → server → broadcast ───────────────────────────────
+  // ── Ping mode change → server → broadcast ─────────────────────────────
   const handlePingModeChange = useCallback(async (mode) => {
     try {
       await fetch(`/api/ping-mode?action=${mode}`, { method: 'POST' })
@@ -155,55 +176,56 @@ export default function App() {
 
   // ── Navigation handler (Header nav + overflow menu) ──────────────────────
   const handleNavigate = useCallback((viewId) => {
+    // 📖 'help' / 'changelog' / 'recommend' / 'router' open modals (M2) or
+    // 📖 toasts (M3/M4) — they don't switch the currentView.
+    if (viewId === 'help') { setHelpOpen(true); return }
+    if (viewId === 'changelog') { setChangelogOpen(true); setChangelogDefaultVersion(null); return }
+    if (viewId === 'recommend') { addToast?.('Smart Recommend arrives in M3', 'info'); return }
+    if (viewId === 'router') { addToast?.('Router dashboard arrives in M4', 'info'); return }
+    if (viewId === 'install-endpoints') { addToast?.('Install Endpoints arrives in M4', 'info'); return }
+    if (viewId === 'installed-models') { addToast?.('Installed Models arrives in M4', 'info'); return }
     setCurrentView(VIEW_TO_NAV[viewId] || viewId)
     lastActivityRef.current = Date.now()
-  }, [])
+  }, [addToast])
 
   // ── Reset view (N key equivalent) ────────────────────────────────────────
   const handleResetView = useCallback(() => {
     resetView()
     setSearchQuery('')
-    addToast('View reset to defaults.', 'info')
-  }, [resetView, setSearchQuery, addToast])
+    addToastInternal('View reset to defaults.', 'info')
+  }, [resetView, setSearchQuery])
 
-  // ── Keyboard shortcuts: only ⌘K / Ctrl+P for the palette ────────────────
+  // ── Changelog open with optional version (e.g. from UpdateChip "What's new") ─
+  const openChangelogAt = useCallback((version) => {
+    setChangelogDefaultVersion(version)
+    setChangelogOpen(true)
+  }, [])
+
+  // ── Keyboard shortcuts: only ⌘K / Ctrl+P for the palette, Esc for any modal ─
   useEffect(() => {
     const handler = (e) => {
       const cmdOrCtrl = e.metaKey || e.ctrlKey
-      // ⌘K / Ctrl+K → toggle command palette (the Web's only global shortcut)
       if (cmdOrCtrl && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         setPaletteOpen((o) => !o)
         return
       }
-      // Ctrl+P is also accepted as a TUI-style alias for the same palette.
       if (cmdOrCtrl && (e.key === 'p' || e.key === 'P') && !e.shiftKey) {
         e.preventDefault()
         setPaletteOpen((o) => !o)
         return
       }
-      // Esc closes whatever is open.
       if (e.key === 'Escape') {
         if (paletteOpen) { setPaletteOpen(false); return }
+        if (helpOpen) { setHelpOpen(false); return }
+        if (changelogOpen) { setChangelogOpen(false); return }
         if (selectedModel) { setSelectedModel(null); return }
         if (exportOpen) { setExportOpen(false); return }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [paletteOpen, selectedModel, exportOpen])
-
-  // 📖 Reset view if URL contains the reset flag.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('reset') === '1') {
-      handleResetView()
-      const url = new URL(window.location.href)
-      url.searchParams.delete('reset')
-      window.history.replaceState({}, '', url.toString())
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [paletteOpen, helpOpen, changelogOpen, selectedModel, exportOpen])
 
   return (
     <>
@@ -223,13 +245,15 @@ export default function App() {
           modelsCount={filtered.length}
           theme={theme}
           onToast={addToast}
+          updateSlot={
+            <UpdateChip
+              updateAvailable={updateAvailable}
+              latestVersion={latestVersion}
+              onRunUpdate={runUpdate}
+              onOpenChangelog={openChangelogAt}
+            />
+          }
         />
-
-        {updateStatus?.warningMessage && (
-          <div className="update-warning-banner" role="alert">
-            {updateStatus.warningMessage} — restart or run npm install -g free-coding-models@latest when your network/permissions are fixed.
-          </div>
-        )}
 
         <div className="app-content">
           {currentView === 'dashboard' && (
@@ -268,13 +292,18 @@ export default function App() {
                 sortColumn={sortColumn}
                 sortDirection={sortDirection}
                 onSort={toggleSort}
+                toolMode={toolMode}
               />
             </div>
           )}
 
           {currentView === 'settings' && (
             <div className="view">
-              <SettingsView onToast={addToast} />
+              <SettingsView
+                onToast={addToast}
+                onOpenChangelog={(version) => { setChangelogDefaultVersion(version); setChangelogOpen(true) }}
+                onCheckForUpdate={() => { checkNow(); addToast?.('Checking for updates…', 'info') }}
+              />
             </div>
           )}
 
@@ -310,12 +339,26 @@ export default function App() {
           onNavigate={handleNavigate}
           onCycleTheme={cycleTheme}
           onResetView={handleResetView}
+          onSetPingMode={handlePingModeChange}
+          onOpenHelp={() => setHelpOpen(true)}
+          onOpenChangelog={() => { setChangelogDefaultVersion(null); setChangelogOpen(true) }}
+          onExport={() => setExportOpen(true)}
+          onRunUpdate={runUpdate}
           currentView={currentView}
           theme={theme}
           pingMode={pingMode}
-          onSetPingMode={handlePingModeChange}
+          models={models}
+          updateAvailable={updateAvailable}
+          latestVersion={latestVersion}
           onToast={addToast}
-          onExport={() => setExportOpen(true)}
+        />
+      )}
+
+      {helpOpen && <HelpView onClose={() => setHelpOpen(false)} />}
+      {changelogOpen && (
+        <ChangelogView
+          onClose={() => setChangelogOpen(false)}
+          defaultVersion={changelogDefaultVersion}
         />
       )}
 

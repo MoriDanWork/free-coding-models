@@ -5153,3 +5153,119 @@ describe('useFilter: filter cycles match TUI ordering', () => {
     }
   })
 })
+
+// ─── M2: URL state builder (web/src/hooks/useUrlState.js) ────────────────
+// 📖 buildUrlParams is the pure helper the hook uses to compose the URL
+// 📖 search string from the live state. M2 write-back correctness depends on it.
+import { buildUrlParams } from '../web/src/hooks/useUrlState.js'
+
+describe('useUrlState: buildUrlParams', () => {
+  it('emits nothing when the state is at defaults', () => {
+    const params = buildUrlParams({
+      currentView: 'dashboard',
+      filterTier: 'all',
+      filterStatus: 'all',
+      filterProvider: 'all',
+      filterVerdict: 'all',
+      filterHealth: 'all',
+      sortColumn: null,
+      sortDirection: null,
+      searchQuery: '',
+    })
+    assert.equal(params.toString(), '')
+  })
+
+  it('omits only the non-default keys', () => {
+    const params = buildUrlParams({
+      currentView: 'analytics',
+      filterTier: 'S+',
+      filterStatus: 'all',
+      filterProvider: 'all',
+      filterVerdict: 'Perfect',
+      filterHealth: 'all',
+      sortColumn: 'avg',
+      sortDirection: 'asc',
+      searchQuery: 'groq',
+    })
+    const out = Object.fromEntries(params.entries())
+    assert.equal(out.view, 'analytics')
+    assert.equal(out.tier, 'S+')
+    assert.equal(out.verdict, 'Perfect')
+    assert.equal(out.sort, 'avg')
+    assert.equal(out.dir, 'asc')
+    assert.equal(out.q, 'groq')
+    assert.equal(out.status, undefined)
+    assert.equal(out.provider, undefined)
+    assert.equal(out.health, undefined)
+  })
+
+  it('always pairs sort + dir when sort is set', () => {
+    const params = buildUrlParams({
+      currentView: 'dashboard',
+      filterTier: 'all', filterStatus: 'all', filterProvider: 'all',
+      filterVerdict: 'all', filterHealth: 'all',
+      sortColumn: 'verdict', sortDirection: 'desc',
+      searchQuery: '',
+    })
+    const out = Object.fromEntries(params.entries())
+    assert.equal(out.sort, 'verdict')
+    assert.equal(out.dir, 'desc')
+  })
+
+  it('exposes the palette flag for deep-links', () => {
+    const params = buildUrlParams({
+      currentView: 'dashboard', filterTier: 'all', filterStatus: 'all',
+      filterProvider: 'all', filterVerdict: 'all', filterHealth: 'all',
+      sortColumn: null, sortDirection: null, searchQuery: '',
+      paletteOpen: true,
+    })
+    const out = Object.fromEntries(params.entries())
+    assert.equal(out.palette, 'open')
+  })
+})
+
+// ─── M2: URL state validation (useUrlState parseUrlParams via the constants) ──
+import { VALID_TIERS, VALID_STATUS, VALID_SORTS, VALID_VIEWS, VALID_DIRS } from '../web/src/hooks/urlState.constants.js'
+
+describe('useUrlState: validation constants', () => {
+  it('tier allowlist matches the TUI TIER_CYCLE', () => {
+    for (const t of ['S+', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'C', 'all']) {
+      assert.ok(VALID_TIERS.has(t), `tier ${t} should be accepted`)
+    }
+    assert.equal(VALID_TIERS.has('Z'), false)
+  })
+
+  it('sort allowlist matches the Web ModelTable columns', () => {
+    for (const s of ['mood', 'idx', 'tier', 'sweScore', 'ctx', 'label', 'origin', 'latestPing',
+                     'avg', 'condition', 'verdict', 'stability', 'uptime', 'aiLatency', 'tps', 'trend']) {
+      assert.ok(VALID_SORTS.has(s), `sort ${s} should be accepted`)
+    }
+    assert.equal(VALID_SORTS.has('nope'), false)
+  })
+
+  it('view allowlist includes dashboard / settings / analytics + page modals', () => {
+    for (const v of ['dashboard', 'settings', 'analytics', 'help', 'changelog', 'recommend', 'router']) {
+      assert.ok(VALID_VIEWS.has(v), `view ${v} should be accepted`)
+    }
+    assert.equal(VALID_VIEWS.has('admin'), false)
+  })
+})
+
+// ─── M2: React hook modules import cleanly (no syntax errors) ────────────
+describe('M2: React hook modules import cleanly', () => {
+  it('useChangelog.js exports useChangelog', async () => {
+    const mod = await import('../web/src/hooks/useChangelog.js')
+    assert.equal(typeof mod.useChangelog, 'function')
+  })
+
+  it('useUpdateChecker.js exports useUpdateChecker', async () => {
+    const mod = await import('../web/src/hooks/useUpdateChecker.js')
+    assert.equal(typeof mod.useUpdateChecker, 'function')
+  })
+
+  it('useUrlState.js exports both useUrlState and buildUrlParams', async () => {
+    const mod = await import('../web/src/hooks/useUrlState.js')
+    assert.equal(typeof mod.useUrlState, 'function')
+    assert.equal(typeof mod.buildUrlParams, 'function')
+  })
+})
