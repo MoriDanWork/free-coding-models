@@ -94,6 +94,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ env.LOGIN_PASSWORD }}
 
+      - name: Extract version
+        id: version
+        # 📖 Read the version from package.json. The metadata step's built-in
+        # 📖 `type=semver` only works on tag-push events, but our primary
+        # 📖 trigger is `workflow_run` — so we pipe the version through here
+        # 📖 and feed it back as a `type=raw` tag. That way, every Docker
+        # 📖 build is tagged with the actual published version, regardless of
+        # 📖 whether the trigger was a tag push, workflow_run, or manual
+        # 📖 workflow_dispatch.
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "  • Docker build will be tagged: ${VERSION}, latest, sha-*"
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v6
@@ -105,6 +119,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=
+            # 📖 The version read from package.json above — used as a
+            # 📖 fallback so workflow_run and workflow_dispatch builds
+            # 📖 still get a human-readable version tag.
+            type=raw,value=${{ steps.version.outputs.version }}
+            # 📖 `latest` is always set on default-branch builds so users
+            # 📖 can `docker pull ghcr.io/.../free-coding-models:latest`
+            # 📖 without depending on a tag-push trigger.
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
