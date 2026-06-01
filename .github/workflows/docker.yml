@@ -33,9 +33,15 @@ env:
 
 jobs:
   build-and-push:
-    # 📖 Only build when the upstream `Release` workflow succeeded. Manual
-    # 📖 `workflow_dispatch` runs skip this check (no workflow_run to inspect).
-    if: ${{ github.event_name != 'workflow_dispatch' && github.event.workflow_run.conclusion == 'success' }}
+    # 📖 Two valid trigger paths:
+    # 📖  - workflow_run from a successful Release → always build
+    # 📖  - workflow_dispatch (manual) → build unless test_mode=true
+    # 📖 Manual test_mode just runs the build to validate the Dockerfile
+    # 📖 without pushing to ghcr.io.
+    if: ${{
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.test_mode != 'true')
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
