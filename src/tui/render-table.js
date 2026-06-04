@@ -1188,5 +1188,11 @@ export function renderTable({
   // 📖 Each line: set bg → render content → erase to EOL (fills with theme bg)
   const cleared = lines.map(l => BG_SET + l + '\x1b[K')
   if (cleared.length > 0) cleared[cleared.length - 1] += '\x1b[J'
-  return cleared.join('\n')
+  // 📖 Every chalk bgRgb / badge / reset emits \x1b[49m or \x1b[0m which
+  // 📖 undoes our theme bg. Patch them all: re-apply BG_SET immediately
+  // 📖 after every reset so the theme bg always wins.
+  const rawFrame = cleared.join('\n')
+  return rawFrame
+    .replace(/\x1b\[0m/g, `\x1b[0m${BG_SET}`)
+    .replace(/\x1b\[49m/g, `\x1b[49m${BG_SET}`)
 }
