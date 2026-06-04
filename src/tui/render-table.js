@@ -415,8 +415,14 @@ export function renderTable({
     benchmarkResults,
   })
 
+  // 📖 Header logo colours — theme-aware bg/green/white
+  const hB = currentPalette().headerLogoBg
+  const hG = currentPalette().headerLogoGreen
+  const hW = currentPalette().headerLogoWhite
+  const hBold = (color, text) => chalk.rgb(...color).bgRgb(...hB).bold(text)
+
   const lines = [
-    `  ${chalk.rgb(118, 185, 0).bgRgb(0, 0, 0).bold(' > ')}${chalk.rgb(118, 185, 0).bgRgb(0, 0, 0).bold('free')}${chalk.rgb(255, 255, 255).bgRgb(0, 0, 0).bold('-coding-models')}${chalk.rgb(118, 185, 0).bgRgb(0, 0, 0).bold('_ ')} ${themeColors.dim(`v${LOCAL_VERSION}`)}${modeBadge}${pingControlBadge}${tierBadge}${originBadge}${chalk.reset('')}   ` +
+    `  ${hBold(hG, ' > ')}${hBold(hG, 'free')}${hBold(hW, '-coding-models')}${hBold(hG, '_ ')} ${themeColors.dim(`v${LOCAL_VERSION}`)}${modeBadge}${pingControlBadge}${tierBadge}${originBadge}${chalk.reset('')}   ` +
       themeColors.dim('📦 ') + themeColors.accentBold(`${completedPings}/${totalVisible}`) + themeColors.dim('  ') +
       themeColors.success(`✅ ${up}`) + themeColors.dim(' up  ') +
       themeColors.warning(`⏳ ${timeout}`) + themeColors.dim(' timeout  ') +
@@ -459,8 +465,9 @@ export function renderTable({
   // 📖 This gives satisfying visual feedback that the click was registered.
   const flashHeader = (plainText, width) => {
     const padded = plainText.length <= width ? plainText.padEnd(width) : plainText.slice(0, width)
-    const [r, g, b] = currentPalette().accentStrong
-    return chalk.bold.rgb(255, 255, 255).bgRgb(r, g, b)(padded)
+    const bg = currentPalette().accentStrong
+    const fg = getReadableTextRgb(bg)
+    return chalk.bold.rgb(...fg).bgRgb(...bg)(padded)
   }
 
   // 📖 Sort-active header: renders the column header with a subtle background color
@@ -474,7 +481,8 @@ export function renderTable({
     const padded = text.padEnd(width).slice(0, width)
     // 📖 Subtle dark accent background — visible but not overwhelming.
     const bg = currentPalette().cursor.defaultBg
-    return chalk.bold.rgb(255, 255, 255).bgRgb(...bg)(padded)
+    const fg = getReadableTextRgb(bg)
+    return chalk.bold.rgb(...fg).bgRgb(...bg)(padded)
   }
 
   // 📖 Now colorize each column header.
@@ -496,8 +504,8 @@ export function renderTable({
   const moodH_c    = (() => {
     // 📖 Tiny verdict indicator column: keep it emoji-only, no arrow, so it stays 2 cells wide.
     const padded = padEndDisplay(moodLabel, W_MOOD)
-    if (headerFlashColumn === 'verdict') return chalk.bold.rgb(255, 255, 255).bgRgb(...currentPalette().accentStrong)(padded)
-    if (sortColumn === 'verdict') return chalk.bold.rgb(255, 255, 255).bgRgb(...currentPalette().cursor.defaultBg)(padded)
+    if (headerFlashColumn === 'verdict') return chalk.bold.rgb(...getReadableTextRgb(currentPalette().accentStrong)).bgRgb(...currentPalette().accentStrong)(padded)
+    if (sortColumn === 'verdict') return chalk.bold.rgb(...getReadableTextRgb(currentPalette().cursor.defaultBg)).bgRgb(...currentPalette().cursor.defaultBg)(padded)
     return themeColors.hotkey(padded)
   })()
   const rankH_c    = headerStyle('rank', rankLabel, W_RANK)
@@ -681,12 +689,12 @@ export function renderTable({
           : numK <= 64
           ? themeColors.metricWarn(ctxRaw.padEnd(W_CTX))
           : numK <= 128
-          ? chalk.rgb(200, 180, 50).bold(ctxRaw.padEnd(W_CTX))
+          ? chalk.rgb(...currentPalette().ctxGold).bold(ctxRaw.padEnd(W_CTX))
           : numK <= 256
-          ? chalk.rgb(100, 200, 80).bold(ctxRaw.padEnd(W_CTX))
+          ? chalk.rgb(...currentPalette().ctxGreen).bold(ctxRaw.padEnd(W_CTX))
           : numK <= 400
-          ? chalk.rgb(0, 255, 200).bold(ctxRaw.padEnd(W_CTX))
-          : chalk.rgb(0, 255, 255).bold.underline(ctxRaw.padEnd(W_CTX))
+          ? chalk.rgb(...currentPalette().ctxTeal).bold(ctxRaw.padEnd(W_CTX))
+          : chalk.rgb(...currentPalette().ctxCyan).bold.underline(ctxRaw.padEnd(W_CTX))
       } else {
         ctxCell = themeColors.dim(ctxRaw.padEnd(W_CTX))
       }
@@ -965,7 +973,7 @@ export function renderTable({
     } else if (isIncompatible) {
       // 📖 Dark red background for models incompatible with the active tool mode.
       // 📖 This visually warns the user that selecting this model won't work with their current tool.
-      renderedRow = chalk.bgRgb(60, 15, 15).rgb(180, 130, 130)(row)
+      renderedRow = chalk.bgRgb(...currentPalette().rowDimBg).rgb(...currentPalette().rowDimFg)(row)
     } else if (r.isRecommended) {
       // 📖 Medium green background for recommended models (distinguishable from favorites)
       renderedRow = themeColors.bgModelRecommended(row)
@@ -1065,7 +1073,7 @@ export function renderTable({
     themeColors.dim(`  •  `) +
     hotkey('N', ' Reset') +
     themeColors.dim(`  •  `) +
-    hotkey('G', ' Theme')
+    themeColors.hotkey('G') + themeColors.infoBold(' Theme')
   )
 
   // 📖 Line 2: command palette + GitHub
@@ -1086,11 +1094,11 @@ export function renderTable({
   }
 
   // 📖 Line 2: command palette (simple color, no background) + GitHub link.
-  const paletteLabel = chalk.rgb(57, 255, 20).bold('Ctrl+P Cmd Palette')
+  const paletteLabel = chalk.rgb(...currentPalette().cmdPalette).bold('Ctrl+P Cmd Palette')
   const starLink = '⭐ ' + themeColors.link('\x1b]8;;https://github.com/vava-nessa/free-coding-models\x1b\\GitHub\x1b]8;;\x1b\\')
   lines.push(
     '  ' + paletteLabel + themeColors.dim(`  •  `) + starLink + themeColors.dim(`  •  `) +
-    chalk.rgb(255, 168, 209).bold('\x1b]8;;https://x.com/vavanessadev\x1b\\Follow @vavanessadev on X for updates and support\x1b]8;;\x1b\\')
+    chalk.rgb(...currentPalette().twitterLink).bold('\x1b]8;;https://x.com/vavanessadev\x1b\\Follow @vavanessadev on X for updates and support\x1b]8;;\x1b\\')
   )
 
   if (versionStatus.isOutdated) {
@@ -1101,8 +1109,8 @@ export function renderTable({
       ? updateMsg + ' '.repeat(Math.max(0, terminalCols - displayWidth(updateMsg)))
       : updateMsg
     const updateBanner = updateWarningMessage
-      ? chalk.bgRed.white.bold(paddedBanner)
-      : chalk.bgRgb(57, 255, 20).rgb(0, 0, 0).bold(paddedBanner)
+      ? chalk.bgRgb(...currentPalette().updateBannerErrorBg).rgb(...currentPalette().updateBannerErrorFg).bold(paddedBanner)
+      : chalk.bgRgb(...currentPalette().updateBannerBg).rgb(...currentPalette().updateBannerFg).bold(paddedBanner)
     const updateBannerRow = lines.length + 1
     _lastLayout.updateBannerRow = updateBannerRow
     footerHotkeys.push({ key: 'update-click', row: updateBannerRow, xStart: 1, xEnd: Math.max(terminalCols, displayWidth(updateMsg)) })
@@ -1142,10 +1150,10 @@ export function renderTable({
   }
 
   const releaseLabel = lastReleaseDate
-    ? chalk.rgb(255, 182, 193)(`Last release: ${lastReleaseDate}`)
+    ? chalk.rgb(...currentPalette().releaseDate)(`Last release: ${lastReleaseDate}`)
     : ''
-  const speedTestLabel = chalk.bgRgb(0, 60, 0).rgb(57, 255, 20).bold(' NEW ⭐️ Ctrl+A 🤖 AI Speed Test ')
-  const globalBenchmarkLabel = chalk.bgRgb(180, 0, 255).white.bold(' NEW Ctrl+U : Global AI Speed Test (Uses a lot of requests!) ')
+  const speedTestLabel = chalk.bgRgb(...currentPalette().badgeSpeedTestBg).rgb(...currentPalette().badgeSpeedTestFg).bold(' NEW ⭐️ Ctrl+A 🤖 AI Speed Test ')
+  const globalBenchmarkLabel = chalk.bgRgb(...currentPalette().badgeBenchmarkBg).rgb(...currentPalette().badgeBenchmarkFg).bold(' NEW Ctrl+U : Global AI Speed Test (Uses a lot of requests!) ')
 
   // 📖 Line 3: Speed Test (Ctrl+A) + Global Benchmark (Ctrl+U) + Last release
   if (releaseLabel || speedTestLabel || globalBenchmarkLabel) {
