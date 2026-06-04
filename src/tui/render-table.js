@@ -1186,9 +1186,10 @@ export function renderTable({
   // 📖 \x1b[48;2;R;G;Bm sets the bg, and \x1b[K erases to EOL in that colour.
   const bgRgb = THEME_BG_RGB[getTheme()] ?? THEME_BG_RGB.dark
   const BG_SET = `\x1b[48;2;${bgRgb[0]};${bgRgb[1]};${bgRgb[2]}m`
-  const BG_RST = '\x1b[49m'
-  const EL = BG_SET + '\x1b[K' + BG_RST
+  const EL = BG_SET + '\x1b[K'
   const cleared = lines.map(l => l + EL)
-  if (cleared.length > 0) cleared[cleared.length - 1] += BG_SET + '\x1b[J' + BG_RST
-  return cleared.join('\n')
+  if (cleared.length > 0) cleared[cleared.length - 1] += BG_SET + '\x1b[J'
+  // 📖 Reset bg only once at the very end — NOT per-line — so the entire frame
+  // 📖 stays filled with the theme bg between and after all lines.
+  return cleared.join('\n') + '\x1b[49m'
 }

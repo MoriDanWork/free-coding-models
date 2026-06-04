@@ -518,7 +518,7 @@ export async function runApp(cliArgs, config, startupOptions = {}) {
   const bgFill = `\x1b[48;2;${initBg[0]};${initBg[1]};${initBg[2]}m`
   const row = bgFill + ' '.repeat(state.terminalCols || 80) + '\x1b[K'
   const initScreen = Array.from({ length: state.terminalRows || 24 }, () => row).join('\n')
-  process.stdout.write('\x1b[H' + initScreen + bgFill + '\x1b[J' + '\x1b[49m\x1b[H')
+  process.stdout.write('\x1b[H' + initScreen + bgFill + '\x1b[J' + '\x1b[H')
 
   if (process.stdout.isTTY) {
     process.stdout.flush && process.stdout.flush()
