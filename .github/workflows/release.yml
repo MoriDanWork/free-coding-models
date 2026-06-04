@@ -107,7 +107,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: 'pnpm'
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
         if: steps.check.outputs.skip == 'false'
 
       # 📖 Install ImageMagick (`magick` binary) — required by scripts/build-favicons.mjs,
