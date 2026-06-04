@@ -287,6 +287,13 @@ function paintBg(bgRgb, text, fgRgb = null, options = {}) {
   return buildStyle({ bgRgb, fgRgb: fgRgb ?? getReadableTextRgb(bgRgb), ...options })(text)
 }
 
+// 📖 Background fill colours — used to force the terminal background to match
+// 📖 the active theme. Light mode → solid white, dark mode → solid dark.
+export const THEME_BG_RGB = {
+  dark: [7, 13, 24],
+  light: [255, 255, 255],
+}
+
 export const themeColors = {
   text: (text) => paintRgb(currentPalette().text, text),
   textBold: (text) => paintRgb(currentPalette().textStrong, text, { bold: true }),
@@ -330,4 +337,10 @@ export const themeColors = {
   overlayBgChangelog: (text) => paintBg(currentPalette().overlayBg.changelog, text, currentPalette().overlayFg),
   overlayBgPlayground: (text) => paintBg(currentPalette().overlayBg.playground, text, currentPalette().overlayFg),
   overlayBgCommandPalette: (text) => paintBg(currentPalette().overlayBg.commandPalette, text, currentPalette().overlayFg),
+  /**
+   * 📖 Returns the active theme's background RGB array.
+   * 📖 Use this to paint lines with a forced background so the TUI looks correct
+   * 📖 regardless of the terminal's native dark/light mode.
+   */
+  bgFill: () => THEME_BG_RGB[activeTheme] ?? THEME_BG_RGB.dark,
 }

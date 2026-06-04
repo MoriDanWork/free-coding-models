@@ -87,7 +87,7 @@ export default function DetailPanel({
   const compatible = isModelCompatibleWithTool(model.providerKey, toolMode)
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} ${styles.panelOpen}`}>
       <div className={styles.header}>
         <h3 className={styles.title}>{model.label}</h3>
         <button className={styles.closeBtn} onClick={onClose}>&times;</button>

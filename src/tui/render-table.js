@@ -47,7 +47,7 @@ import {
   TABLE_FOOTER_LINES,
   FRAMES
 } from '../core/constants.js'
-import { themeColors, currentPalette, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme } from './theme.js'
+import { themeColors, currentPalette, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme, THEME_BG_RGB } from './theme.js'
 import { TIER_COLOR } from './tier-colors.js'
 import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo } from '../core/utils.js'
 import { usagePlaceholderForProvider } from '../core/ping.js'
@@ -1030,6 +1030,8 @@ export function renderTable({
       { text: 'I Help', key: 'i' },
       { text: '  •  ', key: null },
       { text: 'N Reset', key: 'n' },
+      { text: '  •  ', key: null },
+      { text: 'G Theme', key: 'g' },
     ]
     const footerRow1 = lines.length + 1 // 📖 1-based terminal row (line hasn't been pushed yet)
     let xPos = 1
@@ -1061,7 +1063,9 @@ export function renderTable({
     themeColors.dim(`  •  `) +
     hotkey('I', ' Help') +
     themeColors.dim(`  •  `) +
-    hotkey('N', ' Reset')
+    hotkey('N', ' Reset') +
+    themeColors.dim(`  •  `) +
+    hotkey('G', ' Theme')
   )
 
   // 📖 Line 2: command palette + GitHub
@@ -1168,8 +1172,15 @@ export function renderTable({
   // 📖 Append \x1b[K (erase to EOL) to each line so leftover chars from previous
   // 📖 frames are cleared. \x1b[J clears stale content below without adding a
   // 📖 newline that could scroll the alternate screen.
-  const EL = '\x1b[K'
+  //
+  // 📖 Force the theme's background colour on every line so light/dark mode
+  // 📖 is respected even when the terminal's native theme doesn't match.
+  // 📖 \x1b[48;2;R;G;Bm sets the bg, and \x1b[K erases to EOL in that colour.
+  const bgRgb = THEME_BG_RGB[getTheme()] ?? THEME_BG_RGB.dark
+  const BG_SET = `\x1b[48;2;${bgRgb[0]};${bgRgb[1]};${bgRgb[2]}m`
+  const BG_RST = '\x1b[49m'
+  const EL = BG_SET + '\x1b[K' + BG_RST
   const cleared = lines.map(l => l + EL)
-  if (cleared.length > 0) cleared[cleared.length - 1] += '\x1b[J'
+  if (cleared.length > 0) cleared[cleared.length - 1] += BG_SET + '\x1b[J' + BG_RST
   return cleared.join('\n')
 }

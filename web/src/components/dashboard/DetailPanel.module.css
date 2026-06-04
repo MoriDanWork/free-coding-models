@@ -13,6 +13,11 @@
   overflow-y: auto;
 }
 
+/* 📖 Slide-in when model is selected (parent passes a non-null model) */
+.panelOpen {
+  transform: translateX(0);
+}
+
 .header {
   display: flex;
   align-items: center;

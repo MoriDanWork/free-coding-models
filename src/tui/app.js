@@ -130,7 +130,7 @@ import { getConfiguredInstallableProviders, installProviderEndpoints, refreshIns
 import { loadCache, saveCache, clearCache, getCacheAge } from '../core/cache.js'
 import { checkConfigSecurity } from '../core/security.js'
 import { buildCliHelpText } from './cli-help.js'
-import { detectActiveTheme } from './theme.js'
+import { detectActiveTheme, THEME_BG_RGB, getTheme } from './theme.js'
 
 // 📖 mergedModels: cross-provider grouped model list (one entry per label, N providers each)
 // 📖 mergedModelByLabel: fast lookup map from display label → merged model entry
@@ -510,6 +510,16 @@ export async function runApp(cliArgs, config, startupOptions = {}) {
 
   // 📖 Enter alternate screen — animation runs here, zero scrollback pollution
   process.stdout.write(ALT_ENTER)
+
+  // 📖 Force the entire alt-screen background to match the active theme so
+  // 📖 light mode is pure-white and dark mode is deep-dark, regardless of the
+  // 📖 terminal's native colour scheme. We paint every row + erase below.
+  const initBg = THEME_BG_RGB[getTheme()] ?? THEME_BG_RGB.dark
+  const bgFill = `\x1b[48;2;${initBg[0]};${initBg[1]};${initBg[2]}m`
+  const row = bgFill + ' '.repeat(state.terminalCols || 80) + '\x1b[K'
+  const initScreen = Array.from({ length: state.terminalRows || 24 }, () => row).join('\n')
+  process.stdout.write('\x1b[H' + initScreen + bgFill + '\x1b[J' + '\x1b[49m\x1b[H')
+
   if (process.stdout.isTTY) {
     process.stdout.flush && process.stdout.flush()
   }
