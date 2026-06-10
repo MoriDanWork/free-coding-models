@@ -136,11 +136,11 @@ export const sambanova = [
 // 📖 API keys at https://openrouter.ai/keys
 export const openrouter = [
   // ── S+ tier — live :free chat/coding models ──
-  ['qwen/qwen3-coder:free',                     'Qwen3 Coder 480B',   'S+', '70.6%', '262k'],
+  ['qwen/qwen3-coder:free',                     'Qwen3 Coder 480B',   'S+', '70.6%', '1M'],
   // Removed (2026-05-31): minimax/minimax-m2.5:free (free tier removed from OpenRouter)
   ['z-ai/glm-4.5-air:free',                     'GLM 4.5 Air',        'S+', '72.0%', '131k'],
   // Removed (2026-05-31): deepseek/deepseek-v4-flash:free (free tier removed from OpenRouter)
-  ['poolside/laguna-m.1:free',                  'Poolside Laguna M.1', 'S+', '-',     '131k'],
+  ['poolside/laguna-m.1:free',                  'Poolside Laguna M.1', 'S+', '-',     '262k'],
   ['poolside/laguna-xs.2:free',                 'Poolside Laguna XS.2','S+', '-',     '131k'],
   ['moonshotai/kimi-k2.6:free',                 'Kimi K2.6',          'S+', '76.8%', '262k'],
   // ── S tier — live :free chat/coding models ──
@@ -246,7 +246,9 @@ export const googleai = [
   ['gemini-3.1-flash-lite',                     'Gemini 3.1 Flash Lite',        'A+', '55.0%', '1M'],
   // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-pro',                            'Gemini 2.5 Pro',               'S+', '63.2%', '1M'],
+  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash',                          'Gemini 2.5 Flash',             'A+', '50.0%', '1M'],
+  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash-lite',                     'Gemini 2.5 Flash Lite',        'A',  '42.0%', '1M'],
   // Removed (2026-05-26): gemini-3.1-flash-lite-preview (endpoint shutdown May 25, 2026 → replaced by gemini-3.1-flash-lite)
 ]
@@ -293,20 +295,24 @@ export const cloudflare = [
   ['@cf/moonshotai/kimi-k2.6',                'Kimi K2.6',         'S+', '76.8%', '262k'],
   // ── S tier ──
   ['@cf/zai-org/glm-4.7-flash',               'GLM-4.7-Flash',     'S',  '59.2%', '131k'],
-  ['@cf/openai/gpt-oss-120b',                 'GPT OSS 120B',      'S',  '60.0%', '128k'],
   // ── A+ tier ──
   // Removed (2026-05-31): @cf/qwen/qwq-32b (upstream deprecation — Groq removed qwen-qwq-32b July 2025)
-  ['@cf/nvidia/nemotron-3-120b-a12b',         'Nemotron 3 Super',  'A+', '56.0%', '128k'],
+  ['@cf/nvidia/nemotron-3-120b-a12b',         'Nemotron 3 Super',  'A+', '56.0%', '32k'],
   // ── A tier ──
   ['@cf/meta/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout',     'A',  '44.0%', '131k'],
+  ['@cf/meta/llama-3.2-90b-instruct',          'Llama 3.2 90B',     'A+', '45.0%', '128k'],
+  ['@cf/mistralai/mistral-7b-instruct-v0.2',   'Mistral 7B v0.2',   'A',  '38.0%', '128k'],
+  ['@cf/google/gemma-2-9b-it',                 'Gemma 2 9B',        'A',  '35.0%', '128k'],
+  ['@cf/anthropic/claude-3-5-sonnet',         'Claude 3.5 Sonnet',  'S+', '62.4%', '200k'],
+  ['@cf/openai/gpt-4o-mini',                   'GPT-4o Mini',       'A+', '50.0%', '128k'],
   ['@cf/qwen/qwen3-30b-a3b-fp8',              'Qwen3 30B MoE',     'A',  '45.0%', '128k'],
-  ['@cf/qwen/qwen2.5-coder-32b-instruct',     'Qwen2.5 Coder 32B', 'A',  '46.0%', '32k'],
+  ['@cf/qwen/qwen2.5-coder-32b-instruct',     'Qwen2.5 Coder 32B', 'A',  '46.0%', '128k'],
   ['@cf/openai/gpt-oss-20b',                  'GPT OSS 20B',       'A',  '42.0%', '128k'],
   // ── A- tier ──
   ['@cf/meta/llama-3.3-70b-instruct-fp8-fast','Llama 3.3 70B',     'A-', '39.5%', '128k'],
-  ['@cf/google/gemma-4-26b-a4b-it',           'Gemma 4 26B MoE',   'A-', '38.0%', '256k'],
+  ['@cf/google/gemma-4-26b-a4b-it',           'Gemma 4 26B MoE',   'A-', '38.0%', '128k'],
   ['@cf/mistralai/mistral-small-3.1-24b-instruct', 'Mistral Small 3.1', 'B+', '30.0%', '128k'],
-  ['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', 'DeepSeek R1 Distill 32B', 'A-', '45.0%', '80k'],
+
   // ── B tier ──
   ['@cf/ibm/granite-4.0-h-micro',             'Granite 4.0 Micro', 'B+', '30.0%', '128k'],
   // Removed (2026-05-26): @cf/google/gemma-4-31b-it (never existed on Cloudflare)
@@ -346,7 +352,9 @@ export const gemini = [
   ['gemini-3.1-flash-lite',             'Gemini 3.1 Flash Lite',        'A+', '55.0%', '1M'],
   // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-pro',                    'Gemini 2.5 Pro',               'S+', '63.2%', '1M'],
+  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash',                  'Gemini 2.5 Flash',             'A+', '50.0%', '1M'],
+  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash-lite',             'Gemini 2.5 Flash Lite',        'A',  '42.0%', '1M'],
   // Removed (2026-05-26): gemini-3.1-flash-lite-preview (endpoint shutdown May 25, 2026)
 ]
