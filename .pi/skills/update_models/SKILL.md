@@ -47,15 +47,25 @@ Present a compact table:
 |---|----------|--------|-------------|--------|
 | 1 | nvidia   | 26     | 2026-05-26  | ✅ OK  |
 | 2 | groq     | 8      | never       | 🔍 Stale |
+
+**Note:** Providers will be audited sequentially (one at a time) to reduce system load.
 ```
 
-Ask: **"Audit which providers? (All / Stale only / Specific: groq,nvidia,...)"**
+Ask: **"Select providers to audit:\n- all: all providers\n- stale: only stale (never or >30 days)\n- specific: comma-separated keys (e.g., groq,nvidia,openrouter)\nYour choice:"**
 
 ---
 
-### Phase 2: Spawn Researchers (Parallel, JSON)
+### Phase 2: Spawn Researchers (Sequential, JSON)
 
-Spawn up to **8 researchers in parallel**. Each gets the provider's current model list + outputs a structured JSON diff.
+Process providers **one at a time** to avoid overwhelming the system. Each researcher gets the provider's current model list + outputs a structured JSON diff.
+
+For each selected provider in sequence:
+1. Spawn a researcher subagent
+2. Wait for completion
+3. Display a brief summary
+4. Proceed to next provider
+
+This prevents resource exhaustion and makes debugging easier.
 
 #### Researcher Prompt Template
 
