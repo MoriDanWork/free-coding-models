@@ -794,66 +794,77 @@ export function renderTable({
     })() : statusText
     const status = statusColor(padEndDisplay(statusDisplayText, wStatus))
 
-    // 📖 Verdict column - use getVerdict() for stability-aware verdicts, then render with emoji
-    const verdict = getVerdict(r)
-    let verdictText, verdictIcon, verdictColor
-    // 📖 Verdict colors follow the same green→red gradient as TIER_COLOR / SWE%
-    switch (verdict) {
-      case 'Perfect':
-        verdictIcon = '🟩'
-        verdictText = `${verdictIcon} Perfect`
-        verdictColor = themeColors.successBold
-        break
-      case 'Normal':
-        verdictIcon = '🟢'
-        verdictText = `${verdictIcon} Normal`
-        verdictColor = themeColors.metricGood
-        break
-      case 'Spiky':
-        verdictIcon = '🟡'
-        verdictText = `${verdictIcon} Spiky`
-        verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A+'))(text)
-        break
-      case 'Slow':
-        verdictIcon = '🟠'
-        verdictText = `${verdictIcon} Slow`
-        verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A-'))(text)
-        break
-      case 'Very Slow':
-        verdictIcon = '🔴'
-        verdictText = `${verdictIcon} Very Slow`
-        verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B+'))(text)
-        break
-      case 'Overloaded':
-        verdictIcon = '🔥'
-        verdictText = `${verdictIcon} Overloaded`
-        verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B'))(text)
-        break
-      case 'Unstable':
-        // 📖 Avoid ⚠️ here: its variation selector has inconsistent terminal width and shifts the tiny ❔ column.
-        verdictIcon = '🟥'
-        verdictText = `${verdictIcon} Unstable`
-        verdictColor = themeColors.errorBold
-        break
-      case 'Not Active':
-        verdictIcon = '⚫'
-        verdictText = `${verdictIcon} Not Active`
-        verdictColor = themeColors.dim
-        break
-      case 'Pending':
-        verdictIcon = '⏳'
-        verdictText = `${verdictIcon} Pending`
-        verdictColor = themeColors.dim
-        break
-      default:
-        verdictIcon = '💀'
-        verdictText = `${verdictIcon} Unusable`
-        verdictColor = (text) => chalk.bold.rgb(...getTierRgb('C'))(text)
-        break
-    }
-    // 📖 Use padEndDisplay to account for emoji display width (2 cols each) so all rows align
-    const speedCell = verdictColor(padEndDisplay(verdictText, W_VERDICT))
-    const moodCell = padEndDisplay(verdictIcon, W_MOOD)
+  // 📖 Verdict column - use getVerdict() for stability-aware verdicts, then render with emoji
+  const verdict = getVerdict(r)
+  let verdictText, verdictIcon, verdictColor
+  // 📖 Verdict colors follow the same green→red gradient as TIER_COLOR / SWE%
+  switch (verdict) {
+    case 'Perfect':
+      verdictIcon = '🟩✨'
+      verdictText = `${verdictIcon} Perfect`
+      verdictColor = themeColors.successBold
+      break
+    case 'Normal':
+      verdictIcon = '🟢✨'
+      verdictText = `${verdictIcon} Normal`
+      verdictColor = themeColors.metricGood
+      break
+    case 'Spiky':
+      verdictIcon = '🟡✨'
+      verdictText = `${verdictIcon} Spiky`
+      verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A+'))(text)
+      break
+    case 'Slow':
+      verdictIcon = '🟠✨'
+      verdictText = `${verdictIcon} Slow`
+      verdictColor = (text) => chalk.bold.rgb(...getTierRgb('A-'))(text)
+      break
+    case 'Very Slow':
+      verdictIcon = '🔴✨'
+      verdictText = `${verdictIcon} Very Slow`
+      verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B+'))(text)
+      break
+    case 'Overloaded':
+      verdictIcon = '🔥✨'
+      verdictText = `${verdictIcon} Overloaded`
+      verdictColor = (text) => chalk.bold.rgb(...getTierRgb('B'))(text)
+      break
+    case 'Unstable':
+      // 📖 Avoid ⚠️ here: its variation selector has inconsistent terminal width and shifts the tiny ❔ column.
+      verdictIcon = '🟥✨'
+      verdictText = `${verdictIcon} Unstable`
+      verdictColor = themeColors.errorBold
+      break
+    case 'Not Active':
+      verdictIcon = '⚫✨'
+      verdictText = `${verdictIcon} Not Active`
+      verdictColor = themeColors.dim
+      break
+    case 'Pending':
+      verdictIcon = '⏳✨'
+      verdictText = `${verdictIcon} Pending`
+      verdictColor = themeColors.dim
+      break
+    default:
+      verdictIcon = '💀✨'
+      verdictText = `${verdictIcon} Unusable`
+      verdictColor = (text) => chalk.bold.rgb(...getTierRgb('C'))(text)
+      break
+  }
+  // 📖 Use padEndDisplay to account for emoji display width (2 cols each) so all rows align
+  const speedCell = verdictColor(padEndDisplay(verdictText, W_VERDICT))
+  const moodCell = padEndDisplay(verdictIcon, W_MOOD)
+  
+  // 📖 Add NEW badge for recently added models
+  const isNewModel = NEW_MODELS.has(r.modelId) || NEW_MODELS.has(`${r.providerKey}/${r.modelId}`)
+  const newBadge = isNewModel ? '🆕' : ''
+  const verdictTextWithBadge = newBadge ? `${newBadge} ${verdictText}` : verdictText
+  const speedCellWithBadge = verdictColor(padEndDisplay(verdictTextWithBadge, W_VERDICT))
+  const moodCellWithBadge = padEndDisplay(verdictIcon, W_MOOD)
+  
+  // 📖 Use the version with badge for display
+  const speedCell = speedCellWithBadge
+  const moodCell = moodCellWithBadge
 
     // 📖 Stability column - composite score (0–100) from p95 + jitter + spikes + uptime
     // 📖 Left-aligned to sit flush under the column header

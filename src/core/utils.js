@@ -115,6 +115,82 @@ export const getAvg = (r) => {
 //
 // 📖 The "wasUpBefore" check is key — it distinguishes between a model that's
 //    temporarily flaky vs one that was never reachable in the first place.
+const NEW_MODELS = new Set([
+  'nvidia/nemotron-3-ultra-550b-a55b',
+  '@cf/meta/llama-3.2-90b-instruct',
+  '@cf/mistralai/mistral-7b-instruct-v0.2',
+  '@cf/google/gemma-2-9b-it',
+  '@cf/anthropic/claude-3-5-sonnet',
+  '@cf/openai/gpt-4o-mini',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/qwen/qwen2.5-coder-32b-instruct',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  '@cf/ibm/granite-4.0-h-micro',
+  'minimaxai/minimax-m2.7',
+  'z-ai/glm-5.1',
+  'moonshotai/kimi-k2.6',
+  'stepfun-ai/step-3.5-flash',
+  'stepfun-ai/step-3.7-flash',
+  'qwen/qwen3-coder-480b-a35b-instruct',
+  'qwen/qwen3.5-397b-a17b',
+  'meta/llama-4-maverick-17b-128e-instruct',
+  'mistralai/mistral-medium-3.5-128b',
+  'mistralai/mistral-small-4-119b-2603',
+  'qwen/qwen3.5-122b-a10b',
+  'mistralai/mistral-large-3-675b-instruct-2512',
+  'nvidia/nemotron-3-super-120b-a12b',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+  'google/gemma-4-31b-it',
+  'bytedance/seed-oss-36b-instruct',
+  'stockmark/stockmark-2-100b-instruct',
+  'mistralai/ministral-14b-instruct-2512',
+  'meta/llama-3.2-11b-vision-instruct',
+  'microsoft/phi-4-mini-instruct',
+  'gemma-3-12b-it',
+  'nvidia/nemotron-nano-9b-v2',
+  'openrouter/owl-alpha',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+  'nvidia/nemotron-nano-30b-a3b:free',
+  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'liquid/lfm-2.5-1.2b-instruct:free',
+  'liquid/lfm-2.5-1.2b-thinking:free',
+  'qwen3.7-max',
+  'qwen3-max',
+  'qwen3.6-plus',
+  'qwen3-235b-a22b',
+  'qwen3.5-plus',
+  'qwen3-coder-plus',
+  'qwen3-coder-next',
+  'qwen3.6-flash',
+  'qwen3.5-flash',
+  'qwen3-coder-flash',
+  'qwen3-32b',
+  'qwen3-coder-30b-a3b-instruct',
+  'holo2-30b-a3b',
+  'llama-3.3-70b-instruct',
+  'mistral-small-3.2-24b-instruct-2506',
+  'gemma-3-27b-it',
+  'qwen3.5-397b-a17b',
+  'qwen3-coder-30b-a3b-instruct',
+  'gpt-oss-120b',
+  'gpt-oss-20b',
+  'Meta-Llama-3_3-70B-Instruct',
+  'Qwen3-32B',
+  'Mistral-Small-3.2-24B-Instruct-2506',
+  'Mistral-7B-Instruct-v0.3',
+  'Mistral-Nemo-Instruct-2407',
+  'Qwen3.5-9B',
+  'big-pickle',
+  'deepseek-v4-flash-free',
+  'mimo-v2.5-free',
+  'nemotron-3-super-free',
+  'minimax-m3-free'
+]);
+
 export const getVerdict = (r) => {
   const avg = getAvg(r)
   const wasUpBefore = r.pings.length > 0 && r.pings.some(p => p.code === '200')
@@ -128,6 +204,34 @@ export const getVerdict = (r) => {
   const measurablePings = (r.pings || []).filter(p => measurablePingCodes.has(p.code))
   const p95 = getP95(r)
 
+  // 📖 Incorporate benchmark data (AI Latency and TPS) if available
+  if (r.benchmark && r.benchmark.ok) {
+    // AI Latency from benchmark (totalMs)
+    const aiLatency = r.benchmark.totalMs
+    // TPS from benchmark (tokens per second)
+    const tps = r.benchmark.tokensPerSecond
+    
+    // Adjust verdict based on benchmark data
+    if (aiLatency < 400) {
+      // 📖 Only flag as "Spiky" when we have enough data (≥3 pings) to judge stability
+      if (measurablePings.length >= 3 && p95 > 3000) return 'Spiky'
+      return 'Perfect'
+    }
+    if (aiLatency < 1000) {
+      if (measurablePings.length >= 3 && p95 > 5000) return 'Spiky'
+      return 'Normal'
+    }
+    if (aiLatency < 3000) return 'Slow'
+    if (aiLatency < 5000) return 'Very Slow'
+    if (aiLatency < 10000) return 'Unstable'
+    
+    // 📖 High TPS can improve verdict for models with higher latency
+    if (tps > 20 && aiLatency < 15000) return 'Slow'
+    if (tps > 40 && aiLatency < 20000) return 'Normal'
+    if (tps > 60 && aiLatency < 25000) return 'Perfect'
+  }
+  
+  // 📖 Fall back to ping-based verdict if no benchmark data
   if (avg < 400) {
     // 📖 Only flag as "Spiky" when we have enough data (≥3 pings) to judge stability
     if (measurablePings.length >= 3 && p95 > 3000) return 'Spiky'
@@ -236,7 +340,10 @@ export const getStabilityScore = (r) => {
 //
 // 📖 sortDirection 'asc' = ascending (smallest first), 'desc' = descending (largest first)
 export const sortResults = (results, sortColumn, sortDirection, { benchmarkResults = {} } = {}) => {
-  return [...results].sort((a, b) => {
+  return [...results].map(r => ({
+    ...r,
+    benchmark: benchmarkResults?.[`${r.providerKey}/${r.modelId}`]
+  })).sort((a, b) => {
     let cmp = 0
 
     switch (sortColumn) {
