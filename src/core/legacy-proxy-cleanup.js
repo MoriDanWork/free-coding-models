@@ -81,6 +81,8 @@ function noteError(summary, filePath, error) {
   summary.errors.push(`${filePath}: ${error instanceof Error ? error.message : String(error)}`)
 }
 
+// 📖 Thin wrappers: readJsonFile propagates parse errors (callers have try/catch).
+// 📖 writeJsonFile appends a trailing newline for clean diffs.
 function readJsonFile(filePath, fallback = null) {
   if (!existsSync(filePath)) return fallback
   return JSON.parse(readFileSync(filePath, 'utf8'))

@@ -464,16 +464,6 @@ export function defaultRouterPrePromptText() {
   return DEFAULT_ROUTER_SETTINGS.prePrompt.text
 }
 
-function normalizeProfileSettings(settings) {
-  const safeSettings = isPlainObject(settings) ? { ...settings } : {}
-  return {
-    ..._emptyProfileSettings(),
-    ...safeSettings,
-    theme: ['dark', 'light', 'auto'].includes(safeSettings.theme) ? safeSettings.theme : 'auto',
-  }
-}
-
-
 
 function normalizeConfigShape(config) {
   const safeConfig = isPlainObject(config) ? config : {}
@@ -527,10 +517,7 @@ function mergeEndpointInstalls(diskEndpointInstalls, incomingEndpointInstalls) {
   return [...merged.values()]
 }
 
-function mergeProfiles(diskProfiles, incomingProfiles, options = {}) {
-  // 📖 Profile system removed - return empty object
-  return {}
-}
+
 
 /**
  * 📖 buildPersistedConfig merges the latest disk snapshot with the in-memory config so

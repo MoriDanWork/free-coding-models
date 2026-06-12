@@ -307,8 +307,8 @@ export async function runApp(cliArgs, config, startupOptions = {}) {
 
   let results = MODELS
     .filter(([,,,,,providerKey]) => isProviderEnabled(config, providerKey))
-    .map(([modelId, label, tier, sweScore, ctx, providerKey], i) => ({
-      idx: i + 1, modelId, label, tier, sweScore, ctx, providerKey,
+    .map(([modelId, label, tier, sweScore, ctx, providerKey, addedDate], i) => ({
+      idx: i + 1, modelId, label, tier, sweScore, ctx, providerKey, addedDate: addedDate || null,
       status: 'pending',
       pings: [],  // 📖 All ping results (ms or 'TIMEOUT')
       httpCode: null,

@@ -39,6 +39,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { cleanupLegacyProxyArtifacts } from '../core/legacy-proxy-cleanup.js'
+import { sleep } from '../core/shared-helpers.js'
 import { getLastLayout, COLUMN_SORT_MAP } from './render-table.js'
 import { cycleThemeSetting, detectActiveTheme } from './theme.js'
 import { syncShellEnv, ensureShellRcSource, removeShellEnv } from '../core/shell-env.js'
@@ -114,11 +115,7 @@ const PROVIDER_AUTH_ENDPOINTS = {
   'ollama-cloud': { url: 'https://ollama.com/v1/models', method: 'GET' },
 }
 
-// 📖 Sleep helper kept local to this module so the Settings key test flow can
-// 📖 back off between retries without leaking timer logic into the rest of the TUI.
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+// 📖 Sleep imported from shared-helpers.js
 
 // 📖 testProviderKeyDirect: Fast auth-only check using /v1/account or /v1/models.
 // 📖 Fires 3 parallel probes to get a fast decisive result (auth error vs timeout vs 200).
@@ -1613,6 +1610,7 @@ export function createKeyHandler(ctx) {
       case 'action-toggle-favorite-mode': return toggleFavoritesDisplayMode()
       case 'action-reset-view': return resetViewSettings()
       case 'action-probe-404': return runBrokenModelProbe(state)
+      case 'action-toggle-auto-hide-broken': return toggleAutoHideBrokenModels()
       default:
         return
     }

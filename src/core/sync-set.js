@@ -39,9 +39,8 @@ import {
 import { resolveCloudflareUrl } from './ping.js'
 import { ROUTER_PID_PATH } from './router-daemon.js'
 import { existsSync, readFileSync } from 'node:fs'
-
-// 📖 Tier ordering — best tiers first, used for scoring candidates.
-const TIER_ORDER = ['S+', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'C']
+import { TIER_ORDER, parseSweToNum } from './utils.js'
+import { isRouteableProvider } from './shared-helpers.js'
 
 // 📖 Numeric value per tier for composite scoring.
 const TIER_SCORES = {
@@ -69,14 +68,7 @@ const OPENROUTER_FREE_MODEL_IDS = new Set([
   'openrouter/owl-alpha',
 ])
 
-/**
- * Check whether a provider's catalog entry supports routing (has a
- * chat/completions URL and is not CLI-only).
- */
-function isRouteableProvider(providerKey) {
-  const source = sources[providerKey]
-  return Boolean(source?.url && !source.cliOnly && source.url.includes('/chat/completions'))
-}
+// 📖 isRouteableProvider imported from shared-helpers.js (needs `sources` param)
 
 /**
  * Resolve the upstream URL for a provider, handling Cloudflare template substitution.
@@ -98,14 +90,7 @@ function isOpenRouterFreeModelId(modelId) {
   return String(modelId).endsWith(':free') || OPENROUTER_FREE_MODEL_IDS.has(String(modelId))
 }
 
-/**
- * Parse a SWE-bench percentage string like "49.2%" to a number.
- */
-function parseSwePercent(value) {
-  if (typeof value !== 'string') return 0
-  const numeric = parseFloat(value.replace('%', '').trim())
-  return Number.isFinite(numeric) ? numeric : 0
-}
+// 📖 parseSwePercent replaced by shared parseSweToNum (same logic)
 
 /**
  * Score a candidate model for ranking. Higher is better.
@@ -156,12 +141,12 @@ export function buildSyncCandidates(apiKeys, options = {}) {
 
   for (const [providerKey, sourceData] of Object.entries(sources)) {
     if (!apiKeys[providerKey]) continue
-    if (!isRouteableProvider(providerKey)) continue
+    if (!isRouteableProvider(providerKey, sources)) continue
 
     for (const tuple of sourceData.models || []) {
       const [modelId, label = '', tier = '', swe = '0%'] = tuple
       if (typeof modelId !== 'string' || !modelId.trim()) continue
-      const swePercent = parseSwePercent(swe)
+      const swePercent = parseSweToNum(swe)
       if (shouldSkipModel(providerKey, modelId, tier, swePercent, options)) continue
       const score = scoreCandidate(providerKey, modelId, label, tier, swePercent)
       candidates.push({

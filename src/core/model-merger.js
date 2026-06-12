@@ -1,15 +1,6 @@
+import { parseCtxToK, parseSweToNum } from './utils.js'
+
 const TIER_RANK = { 'S+': 0, 'S': 1, 'A+': 2, 'A': 3, 'A-': 4, 'B+': 5, 'B': 6, 'C': 7 }
-
-function parseCtxK(ctx) {
-  if (!ctx) return 0
-  const s = ctx.toLowerCase()
-  if (s.endsWith('m')) return parseFloat(s) * 1000
-  return parseFloat(s) || 0
-}
-
-function parseSwePercent(swe) {
-  return parseFloat(swe) || 0
-}
 
 /**
  * Generate a unique slug from a label.
@@ -60,11 +51,11 @@ export function buildMergedModels(models) {
       group.tier = tier
     }
     // Keep highest SWE score
-    if (parseSwePercent(sweScore) > parseSwePercent(group.sweScore)) {
+    if (parseSweToNum(sweScore) > parseSweToNum(group.sweScore)) {
       group.sweScore = sweScore
     }
     // Keep largest context
-    if (parseCtxK(ctx) > parseCtxK(group.ctx)) {
+    if (parseCtxToK(ctx) > parseCtxToK(group.ctx)) {
       group.ctx = ctx
     }
   }

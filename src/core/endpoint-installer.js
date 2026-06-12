@@ -47,6 +47,7 @@ import { MODELS, sources } from '../../sources.js'
 import { getApiKey, saveConfig } from './config.js'
 import { ENV_VAR_NAMES, PROVIDER_METADATA } from './provider-metadata.js'
 import { getToolMeta } from './tool-metadata.js'
+import { ensureDir, readJson as sharedReadJson } from './shared-helpers.js'
 
 // 📖 replicate uses /v1/predictions (not /chat/completions), so it's not OpenAI-compatible.
 // 📖 zai and opencode-zen ARE OpenAI-compatible and CAN be installed into any tool.
@@ -72,9 +73,8 @@ function getDefaultPaths() {
   }
 }
 
-function ensureDirFor(filePath) {
-  mkdirSync(dirname(filePath), { recursive: true })
-}
+// 📖 ensureDirFor replaced by shared ensureDir (same logic)
+const ensureDirFor = ensureDir
 
 function backupIfExists(filePath) {
   if (!existsSync(filePath)) return null
@@ -83,13 +83,9 @@ function backupIfExists(filePath) {
   return backupPath
 }
 
+// 📖 readJson with default fallback of {} — matches shared helper's signature
 function readJson(filePath, fallback = {}) {
-  if (!existsSync(filePath)) return fallback
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf8'))
-  } catch {
-    return fallback
-  }
+  return sharedReadJson(filePath, fallback)
 }
 
 function writeJson(filePath, value, { backup = true } = {}) {

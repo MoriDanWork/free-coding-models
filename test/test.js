@@ -4291,10 +4291,10 @@ describe('Dynamic OpenRouter MODELS mutation', () => {
     assert.ok(orEntries.length > 0, 'Should have at least one openrouter entry in MODELS')
   })
 
-  it('all openrouter entries have valid tuple format [id, label, tier, swe, ctx, providerKey]', () => {
+  it('all openrouter entries have valid tuple format [id, label, tier, swe, ctx, providerKey, addedDate?]', () => {
     const orEntries = MODELS.filter(m => m[5] === 'openrouter')
     for (const entry of orEntries) {
-      assert.equal(entry.length, 6, `Entry ${entry[0]} should have 6 elements`)
+      assert.ok(entry.length >= 6, `Entry ${entry[0]} should have at least 6 elements`)
       assert.equal(typeof entry[0], 'string', 'modelId should be string')
       assert.equal(typeof entry[1], 'string', 'label should be string')
       assert.ok(TIER_ORDER.includes(entry[2]), `tier ${entry[2]} should be valid`)

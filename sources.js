@@ -549,7 +549,8 @@ export const sources = {
 export const MODELS = [];
 for (const [sourceKey, sourceData] of Object.entries(sources)) {
   if (!sourceData || !sourceData.models) continue
-  for (const [modelId, label, tier, sweScore, ctx] of sourceData.models) {
-    MODELS.push([modelId, label, tier, sweScore, ctx, sourceKey])
+  for (const model of sourceData.models) {
+    const [modelId, label, tier, sweScore, ctx, addedDate] = model
+    MODELS.push([modelId, label, tier, sweScore, ctx, sourceKey, addedDate || null])
   }
 }

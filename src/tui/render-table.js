@@ -49,7 +49,7 @@ import {
 } from '../core/constants.js'
 import { themeColors, currentPalette, getProviderRgb, getTierRgb, getReadableTextRgb, getTheme, THEME_BG_RGB } from './theme.js'
 import { TIER_COLOR } from './tier-colors.js'
-import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo, NEW_MODELS } from '../core/utils.js'
+import { getAvg, getVerdict, getUptime, getStabilityScore, getVersionStatusInfo, isNewModel } from '../core/utils.js'
 import { usagePlaceholderForProvider } from '../core/ping.js'
 import { formatBenchmarkLatency, formatBenchmarkTps } from '../core/benchmark.js'
 import { calculateViewport, sortResultsWithPinnedFavorites, padEndDisplay, displayWidth, stripAnsi, fadedRow } from './render-helpers.js'
@@ -656,13 +656,13 @@ export function renderTable({
       : providerName
     const source = themeColors.provider(r.providerKey, providerDisplay.padEnd(wSource))
     // 📖 Prefix: ⭐ favorite > 🎯 recommended > 🆕 new — only one emoji, never shifts the line
-    const isNewModel = NEW_MODELS.has(r.modelId) || NEW_MODELS.has(`${r.providerKey}/${r.modelId}`)
+    const modelIsNew = isNewModel(r.addedDate)
     let favoritePrefix = ''
     if (r.isRecommended) {
       favoritePrefix = '🎯 '
     } else if (r.isFavorite) {
       favoritePrefix = '⭐ '
-    } else if (isNewModel) {
+    } else if (modelIsNew) {
       favoritePrefix = '🆕 '
     }
     const prefixDisplayWidth = displayWidth(favoritePrefix)

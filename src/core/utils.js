@@ -41,6 +41,7 @@
  * @exports sortResults, filterByTier, findBestModel, parseArgs
  * @exports scoreModelForTask, getTopRecommendations
  * @exports TIER_ORDER, VERDICT_ORDER, TIER_LETTER_MAP, TASK_TYPES, PRIORITY_TYPES, CONTEXT_BUDGETS
+ * @exports parseCtxToK, parseSweToNum, formatCtxWindow, labelFromId, NEW_MODELS, getVersionStatusInfo, formatResultsAsJSON
  *
  * @see bin/free-coding-models.js — main CLI that imports these utils
  * @see sources.js — model definitions consumed by these functions
@@ -115,80 +116,27 @@ export const getAvg = (r) => {
 //
 // 📖 The "wasUpBefore" check is key — it distinguishes between a model that's
 //    temporarily flaky vs one that was never reachable in the first place.
+// 📖 NEW_MODEL_DURATION_MS — how long a model shows the 🆕 badge after being added.
+// 📖 5 days in milliseconds.
+export const NEW_MODEL_DURATION_MS = 5 * 24 * 60 * 60 * 1000
+
+/**
+ * 📖 Check if a model should display the 🆕 badge.
+ * 📖 A model is "new" if its addedDate is within the last 5 days.
+ * 📖 `addedDate` comes from sources.js as the optional 6th element of model tuples.
+ * @param {string|null|undefined} addedDate — ISO date string (e.g. '2026-06-10')
+ * @returns {boolean}
+ */
+export function isNewModel(addedDate) {
+  if (!addedDate || typeof addedDate !== 'string') return false
+  const added = Date.parse(addedDate)
+  if (!Number.isFinite(added)) return false
+  return (Date.now() - added) < NEW_MODEL_DURATION_MS
+}
+
+// 📖 NEW_MODELS kept for backward compat with web/website surfaces that
+// 📖 don't have addedDate. Will be removed once all surfaces migrate.
 export const NEW_MODELS = new Set([
-  'nvidia/nemotron-3-ultra-550b-a55b',
-  '@cf/meta/llama-3.2-90b-instruct',
-  '@cf/mistralai/mistral-7b-instruct-v0.2',
-  '@cf/google/gemma-2-9b-it',
-  '@cf/anthropic/claude-3-5-sonnet',
-  '@cf/openai/gpt-4o-mini',
-  '@cf/qwen/qwen3-30b-a3b-fp8',
-  '@cf/qwen/qwen2.5-coder-32b-instruct',
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-  '@cf/google/gemma-4-26b-a4b-it',
-  '@cf/mistralai/mistral-small-3.1-24b-instruct',
-  '@cf/ibm/granite-4.0-h-micro',
-  'minimaxai/minimax-m2.7',
-  'z-ai/glm-5.1',
-  'moonshotai/kimi-k2.6',
-  'stepfun-ai/step-3.5-flash',
-  'stepfun-ai/step-3.7-flash',
-  'qwen/qwen3-coder-480b-a35b-instruct',
-  'qwen/qwen3.5-397b-a17b',
-  'meta/llama-4-maverick-17b-128e-instruct',
-  'mistralai/mistral-medium-3.5-128b',
-  'mistralai/mistral-small-4-119b-2603',
-  'qwen/qwen3.5-122b-a10b',
-  'mistralai/mistral-large-3-675b-instruct-2512',
-  'nvidia/nemotron-3-super-120b-a12b',
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
-  'google/gemma-4-31b-it',
-  'bytedance/seed-oss-36b-instruct',
-  'stockmark/stockmark-2-100b-instruct',
-  'mistralai/ministral-14b-instruct-2512',
-  'meta/llama-3.2-11b-vision-instruct',
-  'microsoft/phi-4-mini-instruct',
-  'gemma-3-12b-it',
-  'nvidia/nemotron-nano-9b-v2',
-  'openrouter/owl-alpha',
-  'nousresearch/hermes-3-llama-3.1-405b:free',
-  'nvidia/nemotron-nano-30b-a3b:free',
-  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'liquid/lfm-2.5-1.2b-instruct:free',
-  'liquid/lfm-2.5-1.2b-thinking:free',
-  'qwen3.7-max',
-  'qwen3-max',
-  'qwen3.6-plus',
-  'qwen3-235b-a22b',
-  'qwen3.5-plus',
-  'qwen3-coder-plus',
-  'qwen3-coder-next',
-  'qwen3.6-flash',
-  'qwen3.5-flash',
-  'qwen3-coder-flash',
-  'qwen3-32b',
-  'qwen3-coder-30b-a3b-instruct',
-  'holo2-30b-a3b',
-  'llama-3.3-70b-instruct',
-  'mistral-small-3.2-24b-instruct-2506',
-  'gemma-3-27b-it',
-  'qwen3.5-397b-a17b',
-  'qwen3-coder-30b-a3b-instruct',
-  'gpt-oss-120b',
-  'gpt-oss-20b',
-  'Meta-Llama-3_3-70B-Instruct',
-  'Qwen3-32B',
-  'Mistral-Small-3.2-24B-Instruct-2506',
-  'Mistral-7B-Instruct-v0.3',
-  'Mistral-Nemo-Instruct-2407',
-  'Qwen3.5-9B',
-  'big-pickle',
-  'deepseek-v4-flash-free',
-  'mimo-v2.5-free',
-  'nemotron-3-super-free',
-  'minimax-m3-free'
 ]);
 
 export const getVerdict = (r) => {
@@ -376,34 +324,12 @@ export const sortResults = (results, sortColumn, sortDirection, { benchmarkResul
         break
       case 'swe': {
         // 📖 Sort by SWE-bench score — higher is better
-        // 📖 Parse percentage strings like "49.2%", "73.1%" or use 0 for missing values
-        const parseSwe = (score) => {
-          if (!score || score === '—') return 0
-          const num = parseFloat(score.replace('%', ''))
-          return isNaN(num) ? 0 : num
-        }
-        cmp = parseSwe(a.sweScore) - parseSwe(b.sweScore)
+        cmp = parseSweToNum(a.sweScore) - parseSweToNum(b.sweScore)
         break
       }
       case 'ctx': {
-        // 📖 Sort by context window size — larger is better
-        // 📖 Parse strings like "128k", "32k", "1m" into numeric tokens
-        const parseCtx = (ctx) => {
-          if (!ctx || ctx === '—') return 0
-          const str = ctx.toLowerCase()
-          // 📖 Handle millions (1m = 1000k)
-          if (str.includes('m')) {
-            const num = parseFloat(str.replace('m', ''))
-            return num * 1000
-          }
-          // 📖 Handle thousands (128k)
-          if (str.includes('k')) {
-            const num = parseFloat(str.replace('k', ''))
-            return num
-          }
-          return 0
-        }
-        cmp = parseCtx(a.ctx) - parseCtx(b.ctx)
+        // 📖 Sort by context window size — larger is better (uses parseCtxToK)
+        cmp = parseCtxToK(a.ctx) - parseCtxToK(b.ctx)
         break
       }
       case 'condition':
@@ -727,7 +653,7 @@ export const CONTEXT_BUDGETS = {
 
 // 📖 parseCtxToK: Convert context window string ("128k", "1m", "200k") into numeric K tokens.
 // 📖 Used by the scoring engine to compare against CONTEXT_BUDGETS thresholds.
-function parseCtxToK(ctx) {
+export function parseCtxToK(ctx) {
   if (!ctx || ctx === '—') return 0
   const str = ctx.toLowerCase()
   if (str.includes('m')) return parseFloat(str.replace('m', '')) * 1000
@@ -756,7 +682,7 @@ export function labelFromId(id) {
 
 // 📖 parseSweToNum: Convert SWE-bench score string ("49.2%", "73.1%") into a 0–100 number.
 // 📖 Returns 0 for missing or invalid scores.
-function parseSweToNum(sweScore) {
+export function parseSweToNum(sweScore) {
   if (!sweScore || sweScore === '—') return 0
   const num = parseFloat(sweScore.replace('%', ''))
   return isNaN(num) ? 0 : num

@@ -39,7 +39,7 @@
 import chalk from 'chalk'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'fs'
 import { homedir } from 'os'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { sources } from '../../sources.js'
 import { PROVIDER_COLOR } from '../tui/render-table.js'
@@ -48,6 +48,7 @@ import { ENV_VAR_NAMES, isWindows } from './provider-metadata.js'
 import { getToolMeta, TOOL_METADATA } from './tool-metadata.js'
 import { PROVIDER_METADATA } from './provider-metadata.js'
 import { resolveToolBinaryPath } from './tool-bootstrap.js'
+import { ensureDir, readJson, writeJson } from './shared-helpers.js'
 
 const OPENAI_COMPAT_ENV_KEYS = [
   'OPENAI_API_KEY',
@@ -59,11 +60,6 @@ const OPENAI_COMPAT_ENV_KEYS = [
   'LLM_MODEL',
 ]
 const SANITIZED_TOOL_ENV_KEYS = [...OPENAI_COMPAT_ENV_KEYS]
-
-function ensureDir(filePath) {
-  const dir = dirname(filePath)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-}
 
 // 📖 Parse a context window string (e.g. "128k", "1M", "32k") to token count number.
 function parseCtxToTokens(ctx) {
@@ -104,19 +100,7 @@ function backupIfExists(filePath) {
   return backupPath
 }
 
-function readJson(filePath, fallback) {
-  if (!existsSync(filePath)) return fallback
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf8'))
-  } catch {
-    return fallback
-  }
-}
-
-function writeJson(filePath, value) {
-  ensureDir(filePath)
-  writeFileSync(filePath, JSON.stringify(value, null, 2))
-}
+// 📖 readJson/writeJson imported from shared-helpers.js
 
 function getProviderBaseUrl(providerKey) {
   const url = sources[providerKey]?.url
@@ -966,55 +950,8 @@ export async function startExternalTool(mode, model, config) {
   console.log(chalk.cyan(`  ▶ Launching ${meta.label} with ${chalk.bold(model.label)}...`))
   printConfigArtifacts(meta.label, launchPlan.configArtifacts)
 
-  if (mode === 'aider') {
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'crush') {
-    console.log(chalk.dim('  📖 Crush will use the provider directly for this launch.'))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'goose') {
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'qwen') {
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'openhands') {
-    console.log(chalk.dim(`  📖 OpenHands launched with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'amp') {
-    console.log(chalk.dim(`  📖 Amp config updated with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'pi') {
-    // 📖 Pi supports --provider and --model flags for guaranteed auto-selection
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'hermes') {
-    // 📖 Restart the Hermes gateway so the new model config takes effect immediately
-    restartHermesGateway()
-    console.log(chalk.dim(`  📖 Hermes Agent configured with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'continue') {
-    console.log(chalk.dim(`  📖 Continue CLI configured with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'cline') {
-    console.log(chalk.dim(`  📖 Cline configured with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
+  // 📖 Pre-launch hooks for tools that need special treatment
+  if (mode === 'hermes') restartHermesGateway()
   if (mode === 'xcode') {
     const xcodeUrl = launchPlan.baseUrl ? launchPlan.baseUrl.replace(/\/v1$/, '').replace(/\/v1\/chat\/completions$/, '') : ''
     console.log(chalk.bold.cyan('\n  🛠️  Xcode Intelligence Setup Instructions:'))
@@ -1027,29 +964,24 @@ export async function startExternalTool(mode, model, config) {
     console.log(chalk.dim('     Description: ') + chalk.green(`FCM - ${sources[model.providerKey]?.name || model.providerKey}`))
     console.log(chalk.white(`  4. Click Add, then select `) + chalk.bold(model.modelId) + chalk.white(` from the list.\n`))
     console.log(chalk.dim(`  📖 Attempting to launch Xcode...`))
-    return spawnCommand(launchPlan.command, launchPlan.args, launchPlan.env)
   }
+  if (mode === 'crush') console.log(chalk.dim('  📖 Crush will use the provider directly for this launch.'))
 
-  if (mode === 'caveman') {
-    console.log(chalk.dim(`  📖 Launching Caveman Code...`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
+  // 📖 Tool-specific info messages (only for modes that have no prepare-step message)
+  const infoMessages = {
+    openhands: `  📖 OpenHands launched with model: ${model.modelId}`,
+    amp:       `  📖 Amp config updated with model: ${model.modelId}`,
+    hermes:    `  📖 Hermes Agent configured with model: ${model.modelId}`,
+    continue:  `  📖 Continue CLI configured with model: ${model.modelId}`,
+    cline:     `  📖 Cline configured with model: ${model.modelId}`,
+    caveman:   '  📖 Launching Caveman Code...',
+    jcode:     '  📖 Launching jcode...',
+    copilot:   `  📖 Copilot CLI configured with model: ${model.modelId}`,
+    forgecode: `  📖 ForgeCode configured with model: ${model.modelId}`,
   }
+  if (infoMessages[mode]) console.log(chalk.dim(infoMessages[mode]))
 
-  if (mode === 'jcode') {
-    console.log(chalk.dim(`  📖 Launching jcode...`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'copilot') {
-    console.log(chalk.dim(`  📖 Copilot CLI configured with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  if (mode === 'forgecode') {
-    console.log(chalk.dim(`  📖 ForgeCode configured with model: ${model.modelId}`))
-    return spawnCommand(resolveLaunchCommand(mode, launchPlan.command), launchPlan.args, launchPlan.env)
-  }
-
-  console.log(chalk.red(`  X Unsupported external tool mode: ${mode}`))
-  return 1
+  // 📖 xcode uses raw command ("open"), everything else resolves via tool-bootstrap
+  const command = mode === 'xcode' ? launchPlan.command : resolveLaunchCommand(mode, launchPlan.command)
+  return spawnCommand(command, launchPlan.args, launchPlan.env)
 }

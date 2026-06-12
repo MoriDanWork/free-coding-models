@@ -51,6 +51,8 @@ import { buildChatCompletionPingBody, ping, resolveCloudflareUrl, shouldUseDisab
 import { benchmarkModel, BENCHMARK_TIMEOUT_MS } from './benchmark.js'
 import { loadChangelog } from './changelog-loader.js'
 import { sendUsageTelemetry } from './telemetry.js'
+import { TIER_ORDER } from './utils.js'
+import { atomicWriteJson, safeJsonParse, sleep, maskApiKey, isRouteableProvider } from './shared-helpers.js'
 
 export const ROUTER_DEFAULT_PORT = 19280
 export const ROUTER_MAX_PORT = 19289
@@ -83,7 +85,6 @@ const MAX_PROBE_WINDOW = 20
 const TOKEN_FLUSH_INTERVAL_MS = 60000
 const CONFIG_RELOAD_INTERVAL_MS = 10000
 const STATS_RETENTION_DAYS = 90
-const TIER_ORDER = ['S+', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'C']
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503])
 const AUTH_STATUS_CODES = new Set([401, 403])
 const RATE_LIMIT_HEADER_NAMES = [
@@ -110,30 +111,13 @@ function modelKey(provider, model) {
   return `${provider}/${model}`
 }
 
-function safeJsonParse(raw, fallback = null) {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return fallback
-  }
-}
-
+// 📖 parseJsonResult is still local — it returns {ok, value/error} which is different from safeJsonParse
 function parseJsonResult(raw) {
   try {
     return { ok: true, value: JSON.parse(raw) }
   } catch (error) {
     return { ok: false, error }
   }
-}
-
-function atomicWriteJson(path, data, mode = 0o600) {
-  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`
-  writeFileSync(tempPath, JSON.stringify(data, null, 2), { mode })
-  renameSync(tempPath, path)
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function isProcessAlive(pid) {
@@ -207,12 +191,6 @@ function isLikelyHtmlResponse(headers, text = '') {
 }
 
 // ─── Web Dashboard Helpers ─────────────────────────────────────────────────────
-
-function maskApiKey(key) {
-  if (!key || typeof key !== 'string') return ''
-  if (key.length <= 8) return '••••••••'
-  return '••••••••' + key.slice(-4)
-}
 
 // 📖 Same-origin / loopback check for state-changing or secret-revealing
 // 📖 endpoints. Blocks CSRF from malicious tabs and key exfiltration from
@@ -538,11 +516,6 @@ export function cloneHeadersForUpstream(reqHeaders, apiKey, providerKey) {
 
 function getApiModelId(providerKey, modelId) {
   return providerKey === 'zai' ? modelId.replace(/^zai\//, '') : modelId
-}
-
-function isRouteableProvider(providerKey) {
-  const source = sources[providerKey]
-  return Boolean(source?.url && !source.cliOnly && source.url.includes('/chat/completions'))
 }
 
 function resolveProviderUrl(providerKey) {
@@ -898,7 +871,7 @@ class RouterRuntime {
           tier,
           sweScore,
           ctx,
-          routeable: isRouteableProvider(providerKey),
+          routeable: isRouteableProvider(providerKey, sources),
         })
       }
     }
@@ -1501,7 +1474,7 @@ class RouterRuntime {
     // 📖 skip that provider as a candidate for replacements.
     const providerProbeStats = new Map() // provider -> { probed: n, authError: n, stale: n, alive: n }
     for (const [providerKey, source] of Object.entries(sources)) {
-      if (!isRouteableProvider(providerKey)) continue
+      if (!isRouteableProvider(providerKey, sources)) continue
       if (!providerProbeStats.has(providerKey)) providerProbeStats.set(providerKey, { probed: 0, authError: 0, stale: 0, alive: 0 })
       for (const [modelId, , tier, sweScore, ctx] of source.models || []) {
         const key = `${providerKey}/${modelId}`
@@ -2646,7 +2619,7 @@ class RouterRuntime {
       if (req.method === 'GET' && url.pathname === '/api/router/catalog') {
         const rows = []
         for (const [providerKey, source] of Object.entries(sources)) {
-          if (!isRouteableProvider(providerKey)) continue
+          if (!isRouteableProvider(providerKey, sources)) continue
           if (!Array.isArray(source.models)) continue
           for (const [modelId, label, tier, sweScore, ctx] of source.models) {
             rows.push({
@@ -3028,7 +3001,7 @@ export async function buildDefaultRouterSet(config = {}, maxModels, options = {}
   if (maxModels === undefined) maxModels = Math.max(5, keyedProviders.size * 2)
   const entries = []
   for (const [providerKey, source] of Object.entries(sources)) {
-    if (!isRouteableProvider(providerKey)) continue
+    if (!isRouteableProvider(providerKey, sources)) continue
     for (const [model, label, tier, sweScore, ctx] of source.models || []) {
       entries.push({
         provider: providerKey,
@@ -3184,7 +3157,7 @@ export function createRouterRuntimeForTest({ config, port = 0, logger = null, to
 function createDefaultProbeFn(apiKeys) {
   return async (entry) => {
     const { provider, model } = entry
-    if (!isRouteableProvider(provider)) return { ok: false, code: 'NOT_ROUTEABLE', latencyMs: 0 }
+    if (!isRouteableProvider(provider, sources)) return { ok: false, code: 'NOT_ROUTEABLE', latencyMs: 0 }
     const url = resolveProviderUrl(provider)
     if (!url) return { ok: false, code: 'NO_URL', latencyMs: 0 }
     const apiKey = getApiKey({ apiKeys: apiKeys || {} }, provider) || ''
@@ -3239,7 +3212,7 @@ function buildDefaultRouterSetSync(config = {}, maxModels = 5) {
     .map(([provider]) => provider))
   const entries = []
   for (const [providerKey, source] of Object.entries(sources)) {
-    if (!isRouteableProvider(providerKey)) continue
+    if (!isRouteableProvider(providerKey, sources)) continue
     for (const [model, label, tier, sweScore, ctx] of source.models || []) {
       entries.push({ provider: providerKey, model, label, tier, sweScore, ctx, hasKey: keyedProviders.has(providerKey) })
     }
@@ -3323,7 +3296,7 @@ function buildRouterSetFromFavorites(config) {
     if (slashIdx < 0) continue
     const providerKey = fav.slice(0, slashIdx)
     const modelId = fav.slice(slashIdx + 1)
-    if (!isRouteableProvider(providerKey)) continue
+    if (!isRouteableProvider(providerKey, sources)) continue
     const source = sources[providerKey]
     if (!source) continue
     const found = (source.models || []).find((m) => m[0] === modelId)
