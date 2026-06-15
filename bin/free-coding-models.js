@@ -4,8 +4,16 @@
  * @description Live terminal availability checker for coding LLM models with OpenCode & OpenClaw integration.
  */
 
-// 📖 --dev mode: must set FCM_DEV before any module imports resolve daemon paths
-if (process.argv.includes('--dev')) {
+// 📖 --dev mode: must set FCM_DEV before any module imports resolve daemon paths.
+// 📖 Also auto-detect git checkouts — a repo checkout is always in dev mode because
+// 📖 the router daemon must use dev ports/files to avoid clashing with a production
+// 📖 npm install running on the same machine.
+// 📖 IMPORTANT: these checks MUST run synchronously before any static imports
+// 📖 resolve, because router-daemon.js reads FCM_DEV at module load time.
+import { existsSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+if (process.argv.includes('--dev') || (!process.env.FCM_DEV && existsSync(join(dirname(fileURLToPath(import.meta.url)), '..', '.git')))) {
   process.env.FCM_DEV = '1'
 }
 

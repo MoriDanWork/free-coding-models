@@ -9,7 +9,7 @@ import {
   IconRoute, IconPlayerPlay, IconPlayerStop, IconRefresh,
   IconCopy, IconCheck, IconChevronDown, IconChevronUp,
   IconActivity, IconServer, IconPlus, IconX, IconGripVertical,
-  IconArrowUp, IconArrowDown, IconTrash, IconList, IconWand,
+  IconArrowRight, IconArrowUp, IconArrowDown, IconTrash, IconList, IconWand,
 } from '@tabler/icons-react'
 import styles from './RouterView.module.css'
 
@@ -72,6 +72,7 @@ export default function RouterView({ onClose, onToast }) {
   const [pickerProvider, setPickerProvider] = useState('')
   const [saveStatus, setSaveStatus] = useState(SAVE_STATUS_IDLE)
   const saveTimerRef = useRef(null)
+  const hasAutoExpandedLog = useRef(false)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -133,10 +134,15 @@ export default function RouterView({ onClose, onToast }) {
         await fetchStatus()
         await fetchSets()
       } else {
-        onToast?.(`Failed to start: ${data.error || 'unknown'}`, 'error')
+        onToast?.(`Failed to start: ${data.error || data.message || 'unknown'}`, 'error')
       }
     } catch (err) {
-      onToast?.(`Start failed: ${err.message}`, 'error')
+      // 📖 Distinguish between "daemon not running" (fetch itself fails) and
+      // 📖 other network errors so the user gets an actionable error message.
+      const msg = err.name === 'TypeError' && err.message?.includes('fetch')
+        ? 'Cannot reach daemon — it may not be installed or the port is blocked'
+        : err.message
+      onToast?.(`Start failed: ${msg}`, 'error')
     } finally { setActionLoading(false) }
   }
 
@@ -418,6 +424,29 @@ export default function RouterView({ onClose, onToast }) {
   const circuitBreakers = stats?.circuitBreakers || {}
   const requestLog = stats?.requestLog || []
 
+  // 📖 routingOrder — the exact attempt order the daemon will use for the next
+  // 📖 request (priority-first among healthy models). routingOrder[0] is the
+  // 📖 model that will serve the next chat. Used to mark the "next" row and
+  // 📖 to label Primary vs Fallback semantics. Falls back to set order when the
+  // 📖 daemon isn't running or hasn't reported yet (so stopped state still shows
+  // 📖 a sensible priority chain). See issue #120.
+  const routingOrder = stats?.routingOrder || []
+  const nextToServeKey = routingOrder.length > 0 ? routingOrder[0].key : null
+
+  // 📖 Auto-expand the request log the first time requests appear.
+  useEffect(() => {
+    if (requestLog.length > 0 && !hasAutoExpandedLog.current) {
+      hasAutoExpandedLog.current = true
+      setLogExpanded(true)
+    }
+  }, [requestLog.length])
+
+  // 📖 Computed quick-setup display values: actual when running, defaults when stopped.
+  const qsBaseUrl = running && quickSetup?.baseUrl ? quickSetup.baseUrl : 'http://localhost:19280/v1'
+  const qsModel = quickSetup?.model || 'fcm'
+  const qsApiKey = 'fcm-local'
+  const qsAllText = `Base URL: ${qsBaseUrl}\nModel: ${qsModel}\nAPI Key: ${qsApiKey}`
+
   const sets = setsData?.sets || {}
   const setNames = Object.keys(sets).sort()
 
@@ -464,6 +493,41 @@ export default function RouterView({ onClose, onToast }) {
             </div>
           )}
 
+          {/* Quick Setup — ALWAYS visible, front and center */}
+          <div className={`${styles.quickSetup} ${running ? styles.quickSetupHero : ''}`}>
+            <h3 className={styles.sectionTitle}>
+              <IconCopy size={14} />
+              Quick Setup
+              <button className={styles.copyAllBtn} onClick={() => handleCopy(qsAllText, 'all')}>
+                {copied === 'all' ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                {copied === 'all' ? 'Copied!' : 'Copy all'}
+              </button>
+            </h3>
+            <div className={styles.quickRows}>
+              <div className={styles.quickRow}>
+                <span className={styles.quickLabel}>Base URL</span>
+                <code className={styles.quickValue}>{qsBaseUrl}</code>
+                <button className={styles.copyBtn} onClick={() => handleCopy(qsBaseUrl, 'url')}>
+                  {copied === 'url' ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                </button>
+              </div>
+              <div className={styles.quickRow}>
+                <span className={styles.quickLabel}>Model</span>
+                <code className={styles.quickValue}>{qsModel}</code>
+                <button className={styles.copyBtn} onClick={() => handleCopy(qsModel, 'model')}>
+                  {copied === 'model' ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                </button>
+              </div>
+              <div className={styles.quickRow}>
+                <span className={styles.quickLabel}>API Key</span>
+                <code className={styles.quickValue}>{qsApiKey}</code>
+                <button className={styles.copyBtn} onClick={() => handleCopy(qsApiKey, 'key')}>
+                  {copied === 'key' ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Hero Card */}
           <div className={`${styles.heroCard} ${running ? styles.heroRunning : styles.heroStopped}`}>
             <div className={styles.heroLeft}>
@@ -488,8 +552,8 @@ export default function RouterView({ onClose, onToast }) {
             </div>
             <div className={styles.heroActions}>
               {!running ? (
-                <button className={styles.startBtn} onClick={handleStart} disabled={actionLoading}>
-                  <IconPlayerPlay size={14} />
+                <button className={`${styles.startBtn} ${styles.startBtnBig}`} onClick={handleStart} disabled={actionLoading}>
+                  <IconPlayerPlay size={16} />
                   {actionLoading ? 'Starting…' : 'Start Router'}
                 </button>
               ) : (
@@ -503,34 +567,6 @@ export default function RouterView({ onClose, onToast }) {
               </button>
             </div>
           </div>
-
-          {/* Quick Setup */}
-          {running && quickSetup && (
-            <div className={styles.quickSetup}>
-              <h3 className={styles.sectionTitle}>
-                <IconCopy size={14} />
-                Quick Setup
-              </h3>
-              <div className={styles.quickRows}>
-                {quickSetup.baseUrl && (
-                  <div className={styles.quickRow}>
-                    <span className={styles.quickLabel}>Base URL</span>
-                    <code className={styles.quickValue}>{quickSetup.baseUrl}</code>
-                    <button className={styles.copyBtn} onClick={() => handleCopy(quickSetup.baseUrl, 'url')}>
-                      {copied === 'url' ? <IconCheck size={12} /> : <IconCopy size={12} />}
-                    </button>
-                  </div>
-                )}
-                <div className={styles.quickRow}>
-                  <span className={styles.quickLabel}>Model</span>
-                  <code className={styles.quickValue}>{quickSetup.model}</code>
-                  <button className={styles.copyBtn} onClick={() => handleCopy(quickSetup.model, 'model')}>
-                    {copied === 'model' ? <IconCheck size={12} /> : <IconCopy size={12} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Active Set Manager */}
           {running && (
@@ -580,20 +616,42 @@ export default function RouterView({ onClose, onToast }) {
 
               {localModels.length === 0 ? (
                 <div className={styles.setEmpty}>
-                  The active set is empty. Add models with the button above to start routing.
+                  <div className={styles.setEmptyTitle}>No models in the active set</div>
+                  <div className={styles.setEmptyHint}>
+                    Add models from the picker below, or click <strong>Sync best</strong> above to auto-pick working models.
+                  </div>
                 </div>
               ) : (
-                <div className={styles.setList} onDragLeave={handleDragLeave}>
+                <>
+                  {/* 📖 Priority legend — explains the fallback chain so users
+                      understand WHY the top model serves every request (issue #120).
+                      Higher priority = tried first; the rest are failover targets. */}
+                  <div className={styles.priorityLegend}>
+                    <span className={styles.legendPrimary}><IconArrowRight size={11} /> Primary</span>
+                    <span className={styles.legendSeparator}>tries first</span>
+                    <span className={styles.legendFallback}>Fallback</span>
+                    <span className={styles.legendSeparator}>on failure / rate-limit</span>
+                    {running && nextToServeKey && (
+                      <span className={styles.legendNext}>Next up: <code>{nextToServeKey}</code></span>
+                    )}
+                  </div>
+                  <div className={styles.setList} onDragLeave={handleDragLeave}>
                   {localModels.map((m, idx) => {
                     const key = `${m.provider}/${m.model}`
                     const cb = circuitBreakers[key] || {}
                     const isDragging = draggingKey === key
                     const dropAbove = dropPosition?.key === key && dropPosition.side === 'above'
                     const dropBelow = dropPosition?.key === key && dropPosition.side === 'below'
+                    // 📖 Priority semantics for the UI: #1 is the Primary model the
+                    // 📖 router tries first; everyone else is a Fallback. `isNext` is
+                    // 📖 true for the exact model the daemon will serve next request —
+                    // 📖 derived from /stats.routingOrder (priority-first, see #120).
+                    const isPrimary = idx === 0
+                    const isNext = running && nextToServeKey === key
                     return (
                       <div
                         key={key}
-                        className={`${styles.setRow} ${isDragging ? styles.setRowDragging : ''} ${dropAbove ? `${styles.setRowDropTarget} ${styles.setRowDropTargetAbove}` : ''} ${dropBelow ? `${styles.setRowDropTarget} ${styles.setRowDropTargetBelow}` : ''}`}
+                        className={`${styles.setRow} ${isDragging ? styles.setRowDragging : ''} ${isNext ? styles.setRowNext : ''} ${dropAbove ? `${styles.setRowDropTarget} ${styles.setRowDropTargetAbove}` : ''} ${dropBelow ? `${styles.setRowDropTarget} ${styles.setRowDropTargetBelow}` : ''}`}
                         draggable
                         onDragStart={(e) => handleDragStart(e, idx)}
                         onDragOver={(e) => handleDragOver(e, idx)}
@@ -604,7 +662,12 @@ export default function RouterView({ onClose, onToast }) {
                         <span className={styles.setDragHandle} aria-hidden>
                           <IconGripVertical size={14} />
                         </span>
-                        <span className={styles.setPriority}>#{idx + 1}</span>
+                        <span
+                          className={`${styles.setPriority} ${isPrimary ? styles.setPriorityPrimary : styles.setPriorityFallback}`}
+                          title={isPrimary ? 'Primary model — tried first on every request' : `Fallback #${idx + 1} — used when higher-priority models fail or rate-limit`}
+                        >
+                          {isPrimary ? 'Primary' : `#${idx + 1}`}
+                        </span>
                         <span className={styles.setKey}>{key}</span>
                         {m.tier && <span className={styles.setTier}>{m.tier}</span>}
                         <CircuitBadge state={cb.state || m.state} />
@@ -641,6 +704,7 @@ export default function RouterView({ onClose, onToast }) {
                     )
                   })}
                 </div>
+                </>
               )}
 
               {pickerOpen && (
@@ -720,8 +784,8 @@ export default function RouterView({ onClose, onToast }) {
             </div>
           )}
 
-          {/* Request Log */}
-          {running && requestLog.length > 0 && (
+          {/* Request Log — always visible when running */}
+          {running && (
             <div className={styles.section}>
               <h3 className={styles.sectionTitle} onClick={() => setLogExpanded(!logExpanded)} style={{ cursor: 'pointer' }}>
                 <IconActivity size={14} />
@@ -729,23 +793,27 @@ export default function RouterView({ onClose, onToast }) {
                 {logExpanded ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
               </h3>
               {logExpanded && (
-                <div className={styles.logList}>
-                  {requestLog.map((entry, i) => (
-                    <div key={i} className={styles.logRow}>
-                      <span className={entry.error ? styles.logErr : styles.logOk}>
-                        {entry.status || '—'}
-                      </span>
-                      <span className={styles.logModel}>{entry.model}</span>
-                      <span className={styles.logLatency}>
-                        {entry.latency_ms != null ? `${entry.latency_ms}ms` : '—'}
-                      </span>
-                      <span className={styles.logTokens}>
-                        {entry.tokens > 0 ? formatNumber(entry.tokens) + ' tok' : ''}
-                      </span>
-                      {entry.failover && <span className={styles.logFailover}>failover</span>}
-                    </div>
-                  ))}
-                </div>
+                requestLog.length === 0 ? (
+                  <div className={styles.logEmpty}>No requests yet. Start coding to see traffic here.</div>
+                ) : (
+                  <div className={styles.logList}>
+                    {requestLog.map((entry, i) => (
+                      <div key={i} className={styles.logRow}>
+                        <span className={entry.error ? styles.logErr : styles.logOk}>
+                          {entry.status || '—'}
+                        </span>
+                        <span className={styles.logModel}>{entry.model}</span>
+                        <span className={styles.logLatency}>
+                          {entry.latency_ms != null ? `${entry.latency_ms}ms` : '—'}
+                        </span>
+                        <span className={styles.logTokens}>
+                          {entry.tokens > 0 ? formatNumber(entry.tokens) + ' tok' : ''}
+                        </span>
+                        {entry.failover && <span className={styles.logFailover}>failover</span>}
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           )}

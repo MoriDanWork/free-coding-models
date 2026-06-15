@@ -140,6 +140,13 @@
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
+/* 📖 Bigger start button for the stopped state — more prominent CTA. */
+.startBtnBig {
+  padding: 10px 24px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+
 .stopBtn {
   display: flex;
   align-items: center;
@@ -173,6 +180,33 @@
 /* Quick Setup */
 .quickSetup {
   margin-bottom: 16px;
+}
+
+/* 📖 Hero glow when running — makes the quick setup card visually prominent. */
+.quickSetupHero {
+  border: 1px solid rgba(0, 200, 100, 0.25);
+  box-shadow: 0 0 16px rgba(0, 200, 100, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(0, 200, 100, 0.05), transparent);
+}
+
+/* 📖 "Copy all" button — sits at the right of the Quick Setup title. */
+.copyAllBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 10px;
+  background: var(--bg-secondary, #14141f);
+  border: 1px solid var(--border, #1e1e2e);
+  border-radius: 6px;
+  color: var(--text-secondary, #aaa);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  &:hover { color: var(--text-primary, #e0e0e0); border-color: var(--accent, #00c864); }
 }
 
 .sectionTitle {
@@ -351,6 +385,16 @@
   text-transform: uppercase;
 }
 
+.logEmpty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 12px;
+  background: var(--bg-secondary, #14141f);
+  border: 1px dashed var(--border, #1e1e2e);
+  border-radius: 8px;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -421,13 +465,30 @@
 }
 
 .setEmpty {
-  padding: 16px;
+  padding: 20px 16px;
   text-align: center;
   color: var(--text-muted, #888);
   font-size: 12px;
   background: var(--bg-secondary, #14141f);
   border: 1px dashed var(--border, #1e1e2e);
   border-radius: 8px;
+}
+
+.setEmptyTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 4px;
+}
+
+.setEmptyHint {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  line-height: 1.5;
+}
+
+.setEmptyHint strong {
+  color: var(--text-secondary, #aaa);
 }
 
 .setRow {
@@ -508,6 +569,79 @@
   min-width: 32px;
   text-align: center;
   text-transform: uppercase;
+}
+
+/* 📖 Priority badge variants — make the fallback chain semantics explicit
+   (issue #120). Primary gets the accent color so users instantly see which
+   model serves every request; fallbacks stay muted. */
+.setPriorityPrimary {
+  min-width: 52px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 200, 100, 0.14);
+  color: var(--accent, #00c864);
+  border: 1px solid rgba(0, 200, 100, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  text-align: center;
+}
+
+.setPriorityFallback {
+  text-transform: none;
+  opacity: 0.85;
+}
+
+/* 📖 Next-to-serve row — subtle accent left border + tint so the user can
+   see at a glance which model will handle the next chat completion.
+   Only applied when the daemon is running and routingOrder is known. */
+.setRowNext {
+  background: linear-gradient(90deg, rgba(0, 200, 100, 0.07), transparent 60%);
+  border-left: 2px solid var(--accent, #00c864);
+  padding-left: 8px;
+}
+
+/* 📖 Priority legend — one-line explainer above the set list. */
+.priorityLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  background: var(--bg-secondary, #14141f);
+  border: 1px solid var(--border, #1e1e2e);
+  border-radius: 6px;
+}
+
+.legendPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  color: var(--accent, #00c864);
+}
+
+.legendFallback {
+  font-weight: 600;
+  color: var(--text-secondary, #aaa);
+}
+
+.legendSeparator {
+  color: var(--text-muted, #888);
+  opacity: 0.7;
+}
+
+.legendNext {
+  margin-left: auto;
+  color: var(--text-secondary, #aaa);
+}
+
+.legendNext code {
+  color: var(--accent, #00c864);
+  font-family: 'SF Mono', monospace;
+  font-size: 10px;
 }
 
 .setRowBtns {

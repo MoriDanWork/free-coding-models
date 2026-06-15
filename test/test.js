@@ -2841,6 +2841,68 @@ describe('router daemon integration hardening', () => {
     })
   })
 
+  // 📖 Regression for issue #120 — priority must be authoritative. Before the
+  // 📖 fix, priority was only 20% of the routing score, so a healthy
+  // 📖 low-priority model (e.g. GPT-OSS 120B) could steal traffic from a
+  // 📖 deliberately higher-ranked model. These two tests lock in priority-first
+  // 📖 routing so the user's fallback chain is always respected.
+  it('routes to the higher-priority model even when a lower-priority one is also healthy (issue #120)', async () => {
+    await withMockProvider(() => ({
+      body: { id: 'chatcmpl-primary', choices: [{ message: { role: 'assistant', content: 'from-1' } }] },
+    }), async (groqProvider) => {
+      await withMockProvider(() => ({
+        body: { id: 'chatcmpl-fallback', choices: [{ message: { role: 'assistant', content: 'from-2' } }] },
+      }), async (nvidiaProvider) => {
+        await withSourceUrls({ groq: groqProvider.url, nvidia: nvidiaProvider.url }, async () => {
+          const config = buildRouterTestConfig([
+            { provider: 'groq', model: ROUTER_TEST_MODELS.groqFast, priority: 1 },
+            { provider: 'nvidia', model: ROUTER_TEST_MODELS.nvidiaFast, priority: 2 },
+          ])
+          await withRouterTestServer(config, async ({ baseUrl }) => {
+            const response = await postRouterChat(baseUrl)
+            const payload = await response.json()
+
+            // 📖 Both providers are healthy, so priority #1 (groq) MUST serve —
+            // 📖 never nvidia, regardless of any health-score ordering.
+            assert.equal(response.status, 200)
+            assert.equal(response.headers.get('x-fcm-router-model'), `groq/${ROUTER_TEST_MODELS.groqFast}`)
+            assert.equal(payload.id, 'chatcmpl-primary')
+            assert.equal(groqProvider.requests.length, 1)
+            assert.equal(nvidiaProvider.requests.length, 0)
+          })
+        })
+      })
+    })
+  })
+
+  it('exposes routingOrder in /stats so the dashboard knows which model serves next (issue #120)', async () => {
+    await withMockProvider(() => ({
+      body: { id: 'chatcmpl-ok', choices: [] },
+    }), async (groqProvider) => {
+      await withMockProvider(() => ({
+        body: { id: 'chatcmpl-ok', choices: [] },
+      }), async (nvidiaProvider) => {
+        await withSourceUrls({ groq: groqProvider.url, nvidia: nvidiaProvider.url }, async () => {
+          const config = buildRouterTestConfig([
+            { provider: 'groq', model: ROUTER_TEST_MODELS.groqFast, priority: 1 },
+            { provider: 'nvidia', model: ROUTER_TEST_MODELS.nvidiaFast, priority: 2 },
+          ])
+          await withRouterTestServer(config, async ({ baseUrl }) => {
+            const response = await fetch(`${baseUrl}/stats`)
+            const stats = await response.json()
+
+            assert.equal(response.status, 200)
+            assert.ok(Array.isArray(stats.routingOrder), 'routingOrder must be an array')
+            assert.equal(stats.routingOrder.length, 2)
+            // 📖 routingOrder[0] is the model that will serve the next request.
+            assert.equal(stats.routingOrder[0].key, `groq/${ROUTER_TEST_MODELS.groqFast}`)
+            assert.equal(stats.routingOrder[1].key, `nvidia/${ROUTER_TEST_MODELS.nvidiaFast}`)
+          })
+        })
+      })
+    })
+  })
+
   it('returns precise quota metadata when every routed model is exhausted', async () => {
     await withMockProvider(() => ({
       status: 429,

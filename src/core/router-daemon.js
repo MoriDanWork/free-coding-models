@@ -61,15 +61,28 @@ export const ROUTER_MAX_PORT_DEV = 29289
 
 // 📖 Dev mode uses -dev suffixed files so the local dev daemon never clashes
 // 📖 with a production install running on the same machine.
-const _dev = typeof process.env.FCM_DEV !== 'undefined' ? !!process.env.FCM_DEV : false
+// 📖 IMPORTANT: _isDev() is a function, not a constant, so it picks up FCM_DEV
+// 📖 changes that happen after module load (e.g. the bin entry point setting
+// 📖 FCM_DEV=1 on git checkouts). Constant exports for PID/PORT/LOG paths
+// 📖 are still computed eagerly — they are only used by the daemon child process
+// 📖 which always has FCM_DEV set before import. The TUI and dashboard use
+// 📖 getRouterPortRange() and getRouterPidPath() for dynamic resolution.
+function _isDev() { return typeof process.env.FCM_DEV !== 'undefined' ? !!process.env.FCM_DEV : false }
+const _dev = _isDev()
 export const ROUTER_PID_PATH = join(homedir(), `.free-coding-models-daemon${_dev ? '-dev' : ''}.pid`)
 export const ROUTER_PORT_PATH = join(homedir(), `.free-coding-models-daemon${_dev ? '-dev' : ''}.port`)
 export const ROUTER_LOG_PATH = join(homedir(), `.free-coding-models-daemon${_dev ? '-dev' : ''}.log`)
 export const ROUTER_TOKENS_PATH = join(homedir(), `.free-coding-models-tokens${_dev ? '-dev' : ''}.json`)
 
+// 📖 Dynamic path resolvers — used by the TUI dashboard which may have FCM_DEV
+// 📖 set after module load time (git checkout auto-detection in bin/ entry).
+export function getRouterPidPath() { return join(homedir(), `.free-coding-models-daemon${_isDev() ? '-dev' : ''}.pid`) }
+export function getRouterPortPath() { return join(homedir(), `.free-coding-models-daemon${_isDev() ? '-dev' : ''}.port`) }
+export function getRouterLogPath() { return join(homedir(), `.free-coding-models-daemon${_isDev() ? '-dev' : ''}.log`) }
+
 // 📖 Returns effective port range for current mode (dev vs production)
 export function getRouterPortRange() {
-  return _dev
+  return _isDev()
     ? { defaultPort: ROUTER_DEFAULT_PORT_DEV, maxPort: ROUTER_MAX_PORT_DEV }
     : { defaultPort: ROUTER_DEFAULT_PORT, maxPort: ROUTER_MAX_PORT }
 }
@@ -1151,6 +1164,25 @@ class RouterRuntime {
     })
   }
 
+  // 📖 getRoutingCandidates — the ordered list of models the router will try,
+  // 📖 in EXACT attempt order. This is the heart of routing.
+  // 📖
+  // 📖 Strategy (priority-first): the user's priority order is authoritative.
+  // 📖 A model ranked #1 is always tried first while it is healthy, even if a
+  // 📖 lower-priority model has a better health score. The health score is only
+  // 📖 used to break ties between models that share the same priority — which
+  // 📖 happens in practice when multiple models tie because they have no probe
+  // 📖 data yet (cold start) or identical stats.
+  // 📖
+  // 📖 Why: before this, priority was only 20% of the score and a fast
+  // 📖 low-priority model could steal traffic from a deliberately higher-ranked
+  // 📖 one (see issue #120 — GPT-OSS 120B served despite higher-priority models
+  // 📖 being healthy). Users set the fallback chain on purpose; routing must
+  // 📖 respect it.
+  // 📖
+  // 📖 Circuit-breaker safety is preserved: CLOSED (healthy) models always come
+  // 📖 before HALF_OPEN (probing after cooldown) models, so a recovering model
+  // 📖 never pre-empts a known-good one.
   getRoutingCandidates(set) {
     const scored = this.scoreCandidates(set)
     const usable = scored.filter((candidate) => {
@@ -1162,8 +1194,26 @@ class RouterRuntime {
     })
     const closed = usable.filter((candidate) => candidate.circuit.state === 'CLOSED')
     const halfOpen = usable.filter((candidate) => candidate.circuit.state === 'HALF_OPEN')
-    const byScore = (a, b) => b.score - a.score || a.priority - b.priority
-    return [...closed.sort(byScore), ...halfOpen.sort(byScore)]
+    // 📖 Priority ascending (1 before 2); within the same priority, healthier
+    // 📖 score wins so cold-start ties resolve deterministically.
+    const byPriorityThenHealth = (a, b) => a.priority - b.priority || b.score - a.score
+    return [...closed.sort(byPriorityThenHealth), ...halfOpen.sort(byPriorityThenHealth)]
+  }
+
+  // 📖 getRoutingOrder — slim projection of getRoutingCandidates for the /stats
+  // 📖 payload and dashboards. Exposes the EXACT order the router will attempt
+  // 📖 on the next request, so the UI can mark the model that will serve it
+  // 📖 (routingOrder[0]) and label every entry as Primary vs Fallback.
+  // 📖 Cheap to compute: reuses getRoutingCandidates + already-recorded health.
+  getRoutingOrder(set) {
+    return this.getRoutingCandidates(set).map((candidate) => ({
+      key: candidate.key,
+      provider: candidate.provider,
+      model: candidate.model,
+      priority: candidate.priority,
+      state: candidate.circuit?.state || 'UNKNOWN',
+      score: Number(candidate.score.toFixed(4)),
+    }))
   }
 
   getModelHealth(set = this.getSet()) {
@@ -1359,6 +1409,11 @@ class RouterRuntime {
       ...this.statusPayload(),
       tokens: this.tokenTracker.summary(),
       models: this.getModelHealth(activeSet),
+      // 📖 routingOrder — the exact attempt order for the next request
+      // 📖 (priority-first among healthy models). routingOrder[0] is what will
+      // 📖 serve the next chat completion. Surfaced so dashboards can mark the
+      // 📖 "next" model and label Primary vs Fallback semantics. See issue #120.
+      routingOrder: this.getRoutingOrder(activeSet),
       requestLog: this.requestLog.slice(0, 20),
       circuitBreakers: Object.fromEntries([...this.circuit.entries()].map(([key, value]) => [key, {
         state: value.authError ? 'AUTH_ERROR' : value.stale ? 'STALE' : value.unsupported ? 'UNSUPPORTED' : value.state,
@@ -3354,6 +3409,13 @@ async function listenWithFallback(server, preferredPort, logger, host = '127.0.0
 export async function runRouterDaemon() {
   const config = loadConfig()
   const router = await ensureRouterConfigForDaemon(config)
+  // 📖 In dev mode, override the saved port with the dev default so a local
+  // 📖 checkout doesn't clash with a production install on the same machine.
+  // 📖 The saved config has port: 19280 (production); dev should use 29280.
+  const { defaultPort: devDefault } = getRouterPortRange()
+  if (_dev && router.port !== devDefault && router.port === DEFAULT_ROUTER_SETTINGS.port) {
+    router.port = devDefault
+  }
   const logger = new RouterLogger(ROUTER_LOG_PATH, router.logLevel)
   const runtime = new RouterRuntime({ config, port: router.port, logger })
   runtime.installProcessSafety()

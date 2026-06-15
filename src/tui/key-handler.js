@@ -54,6 +54,7 @@ import {
   cycleRouterDashboardProbeMode,
   openRouterDashboardOverlay,
   restartRouterDashboardDaemon,
+  setDashboardNotice,
   toggleRouterDashboardProbePause,
 } from '../core/router-dashboard.js'
 import {
@@ -62,6 +63,7 @@ import {
   handlePlaygroundKeypress,
 } from '../core/playground.js'
 import { benchmarkModel } from '../core/benchmark.js'
+import { isPackageDevMode } from '../core/updater.js'
 
 // 📖 Some providers need an explicit probe model because the first catalog entry
 // 📖 is not guaranteed to be accepted by their chat endpoint.
@@ -76,6 +78,52 @@ const PROVIDER_TEST_MODEL_OVERRIDES = {
 // 📖 single stale catalog entry or transient timeout does not mark a valid key as dead.
 const SETTINGS_TEST_MAX_ATTEMPTS = 10
 const SETTINGS_TEST_RETRY_DELAY_MS = 4000
+
+// 📖 spawnDaemonCommand — spawns `--daemon-bg` or `--daemon-stop` and captures
+// 📖 the JSON result from stdout so we can surface startup errors to the user.
+// 📖 Falls back to a generic notice when stdout isn't parseable.
+function spawnDaemonCommand(state, args) {
+  const binPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'free-coding-models.js')
+  // 📖 Inherit FCM_DEV so the spawned daemon matches the TUI's dev/prod mode.
+  // 📖 Without this, a dev-mode TUI (git checkout) spawns a production daemon
+  // 📖 that writes to the wrong PID/port files and can't be discovered later.
+  // 📖 isPackageDevMode() detects git checkouts even without --dev or FCM_DEV=1.
+  const env = { ...process.env }
+  if (isPackageDevMode() && !env.FCM_DEV) env.FCM_DEV = '1'
+  const child = spawn('node', [binPath, ...args], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env,
+  })
+  child.unref()
+
+  // 📖 Only capture stdout for start commands — stop doesn't need error surfacing.
+  if (!args.includes('--daemon-bg')) return
+
+  let stdout = ''
+  let stderr = ''
+  child.stdout?.on('data', (chunk) => { stdout += chunk })
+  child.stderr?.on('data', (chunk) => { stderr += chunk })
+  child.on('close', (code) => {
+    if (code === 0) return
+    // 📖 Try to parse the JSON result from --daemon-bg for a precise error message.
+    let errorMsg = null
+    try {
+      const parsed = JSON.parse(stdout.trim())
+      if (parsed?.error) errorMsg = parsed.error
+    } catch {}
+    if (!errorMsg && stderr.trim()) {
+      // 📖 Common startup crash reasons: port in use, config corruption, etc.
+      const lines = stderr.trim().split('\n').filter(l => !l.startsWith('node:'))
+      errorMsg = lines.slice(0, 2).join(' — ') || stderr.trim().slice(0, 120)
+    }
+    if (errorMsg) {
+      setDashboardNotice(state, 'error', `Daemon failed to start: ${errorMsg}`, 8000)
+    } else if (code !== 0) {
+      setDashboardNotice(state, 'error', `Daemon failed to start (exit code ${code})`, 8000)
+    }
+  })
+}
 
 // 📖 PROVIDER_AUTH_ENDPOINTS maps provider keys to their auth-check URL + method.
 // 📖 For most providers this is the /models endpoint (returns 200=valid, 401=invalid).
@@ -1803,15 +1851,9 @@ export function createKeyHandler(ctx) {
       // 📖 S: Toggle daemon start/stop
       if (key.name === 's') {
         const isRunning = state.routerDashboardStatus === 'ready' || state.routerDashboardStatus === 'partial'
-        const binPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'free-coding-models.js')
         const args = isRunning ? ['--daemon-stop'] : ['--daemon-bg']
-        
         state.routerDashboardStatus = 'loading'
-        const child = spawn('node', [binPath, ...args], {
-          detached: true,
-          stdio: 'ignore',
-        })
-        child.unref()
+        spawnDaemonCommand(state, args)
         return
       }
 
@@ -1822,15 +1864,9 @@ export function createKeyHandler(ctx) {
 
         if ((state.routerDashboardCursorIndex ?? 0) === btnCursor) {
           const isRunning = state.routerDashboardStatus === 'ready' || state.routerDashboardStatus === 'partial'
-          const binPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'free-coding-models.js')
           const args = isRunning ? ['--daemon-stop'] : ['--daemon-bg']
-          
           state.routerDashboardStatus = 'loading'
-          const child = spawn('node', [binPath, ...args], {
-            detached: true,
-            stdio: 'ignore',
-          })
-          child.unref()
+          spawnDaemonCommand(state, args)
         } else if ((state.routerDashboardCursorIndex ?? 0) === installBtnCursor) {
           state.routerDashboardOpen = false
           state.installEndpointsOpen = true
@@ -2411,9 +2447,32 @@ export function createKeyHandler(ctx) {
             const binPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'free-coding-models.js')
             const child = spawn('node', [binPath, '--daemon-bg'], {
               detached: true,
-              stdio: 'ignore',
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: { ...process.env, ...(isPackageDevMode() && !process.env.FCM_DEV ? { FCM_DEV: '1' } : {}) },
             })
             child.unref()
+
+            // 📖 Capture daemon startup output so we can show the real error reason
+            let onboardingStdout = ''
+            let onboardingStderr = ''
+            child.stdout?.on('data', (chunk) => { onboardingStdout += chunk })
+            child.stderr?.on('data', (chunk) => { onboardingStderr += chunk })
+            child.on('close', (code) => {
+              if (code === 0) return
+              let detail = null
+              try {
+                const parsed = JSON.parse(onboardingStdout.trim())
+                if (parsed?.error) detail = parsed.error
+              } catch {}
+              if (!detail && onboardingStderr.trim()) {
+                const lines = onboardingStderr.trim().split('\n').filter(l => !l.startsWith('node:'))
+                detail = lines.slice(0, 2).join(' — ') || onboardingStderr.trim().slice(0, 120)
+              }
+              if (state.routerOnboardingPhase === 'loading') {
+                state.routerOnboardingPhase = 'error'
+                state.routerOnboardingError = detail || `Daemon exited with code ${code}`
+              }
+            })
             await new Promise((r) => setTimeout(r, 2000))
             if (state.routerOnboardingPhase === 'loading') {
               state.routerOnboardingPhase = 'success'

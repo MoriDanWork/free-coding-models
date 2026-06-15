@@ -33,6 +33,7 @@
  * @exports fetchRouterSets, createRouterSet, renameRouterSet, duplicateRouterSet
  * @exports deleteRouterSet, activateRouterSet, updateRouterSetModels
  * @exports addModelToRouterSet, removeModelFromRouterSet, reorderRouterSetModel
+ * @exports setDashboardNotice
  *
  * @see ./router-daemon.js — daemon endpoints consumed by this screen
  * @see ./overlays.js — overlay factory that mounts this renderer
@@ -42,7 +43,7 @@
 import chalk from 'chalk'
 import { existsSync, readFileSync } from 'node:fs'
 import { displayWidth, padEndDisplay, sliceOverlayLines, tintOverlayLines } from '../tui/render-helpers.js'
-import { ROUTER_DEFAULT_PORT, ROUTER_MAX_PORT, ROUTER_PID_PATH, ROUTER_PORT_PATH, getRouterPortRange } from './router-daemon.js'
+import { ROUTER_DEFAULT_PORT, ROUTER_MAX_PORT, getRouterPidPath, getRouterPortPath, getRouterPortRange } from './router-daemon.js'
 import { themeColors, getTierRgb } from '../tui/theme.js'
 import { formatTokenTotalCompact } from './token-usage-reader.js'
 import { sendUsageTelemetry } from './telemetry.js'
@@ -150,14 +151,16 @@ async function fetchJson(url, options = {}) {
 }
 
 function readDaemonFiles() {
-  const recordedPort = readNumberFile(ROUTER_PORT_PATH)
-  const recordedPid = readNumberFile(ROUTER_PID_PATH)
+  const portPath = getRouterPortPath()
+  const pidPath = getRouterPidPath()
+  const recordedPort = readNumberFile(portPath)
+  const recordedPid = readNumberFile(pidPath)
   return {
     port: recordedPort,
     pid: recordedPid,
     pidAlive: recordedPid ? isProcessAlive(recordedPid) : false,
-    hasPidFile: existsSync(ROUTER_PID_PATH),
-    hasPortFile: existsSync(ROUTER_PORT_PATH),
+    hasPidFile: existsSync(pidPath),
+    hasPortFile: existsSync(portPath),
   }
 }
 
@@ -168,7 +171,7 @@ function buildPortCandidates(state) {
     ? state.routerDashboardBaseUrl.match(/:(\d+)$/)
     : null
   const baseUrlPort = baseUrlMatch ? Number.parseInt(baseUrlMatch[1], 10) : null
-  const filePort = readNumberFile(ROUTER_PORT_PATH)
+  const filePort = readNumberFile(getRouterPortPath())
   const { defaultPort, maxPort } = getRouterPortRange()
   for (const port of [baseUrlPort, currentPort, filePort, defaultPort]) {
     if (Number.isInteger(port) && port > 0 && !ports.includes(port)) ports.push(port)
@@ -259,6 +262,21 @@ export function normalizeRouterDashboardSnapshot(healthPayload, statsPayload) {
   const merged = { ...health, ...stats }
   const models = Array.isArray(stats.models) ? stats.models.map(normalizeModelHealth) : []
   const requestLog = Array.isArray(stats.requestLog) ? stats.requestLog.map(normalizeRequestEntry) : []
+  // 📖 routingOrder — priority-first attempt order from /stats (issue #120).
+  // 📖 routingOrder[0].key is the model that will serve the next request, so the
+  // 📖 TUI can mark it with a ▶ NEXT glyph. Guarded so older daemons without
+  // 📖 the field still render fine.
+  const routingOrder = Array.isArray(stats.routingOrder)
+    ? stats.routingOrder
+        .filter((entry) => isRecord(entry) && typeof entry.key === 'string')
+        .map((entry) => ({
+          key: entry.key,
+          provider: safeString(entry.provider, ''),
+          model: safeString(entry.model, ''),
+          priority: toFiniteNumber(entry.priority, 0),
+          state: safeString(entry.state, 'UNKNOWN'),
+        }))
+    : []
 
   return {
     ok: merged.ok === true,
@@ -281,6 +299,7 @@ export function normalizeRouterDashboardSnapshot(healthPayload, statsPayload) {
     stalePid: toFiniteNumber(merged.stalePid, null),
     tokens: normalizeTokens(stats.tokens),
     models,
+    routingOrder,
     requestLog,
   }
 }
@@ -331,7 +350,7 @@ function statusBadge(status, snapshot) {
   return themeColors.error('○ UNREACHABLE')
 }
 
-function setDashboardNotice(state, type, message, ttlMs = 3500) {
+export function setDashboardNotice(state, type, message, ttlMs = 3500) {
   state.routerDashboardNotice = { type, message, at: Date.now() }
   if (state.routerDashboardNoticeTimer) clearTimeout(state.routerDashboardNoticeTimer)
   state.routerDashboardNoticeTimer = setTimeout(() => {
@@ -843,15 +862,19 @@ export function renderRouterDashboard(state, deps = {}) {
   lines.push(`  ${paintBanner(bannerLine)}`)
   lines.push('')
 
-  // ── Quick Setup (connection info) ───────────────────────────────────────────
-  const port = snapshot.port || state.routerDashboardPort || '—'
-  const baseUrl = isRunning ? `http://localhost:${port}/v1` : `http://localhost:${port}/v1`
-  lines.push(`  ${themeColors.textBold('Quick Setup')} ${themeColors.dim('— paste into your coding tool')}`)
-  lines.push(`  ${themeColors.dim('URL')}     ${themeColors.info(baseUrl)}`)
-  lines.push(`  ${themeColors.dim('Model')}   ${themeColors.info('fcm')}`)
-  lines.push(`  ${themeColors.dim('API Key')} ${themeColors.info('fcm-local')}`)
+  // ── Quick Setup (connection info) — HERO section ──────────────────────────
+  // 📖 Always visible with default port 19280 so users can copy even when stopped.
+  const { defaultPort: currentDefaultPort } = getRouterPortRange()
+  const port = snapshot.port || state.routerDashboardPort || currentDefaultPort
+  const baseUrl = `http://localhost:${port}/v1`
+  lines.push(`  ${themeColors.textBold('Quick Setup')} ${themeColors.dim('— paste into your coding tool config')}`)
+  lines.push(`  ${themeColors.dim('URL')}     ${themeColors.infoBold(baseUrl)}`)
+  lines.push(`  ${themeColors.dim('Model')}   ${themeColors.infoBold('fcm')}`)
+  lines.push(`  ${themeColors.dim('API Key')} ${themeColors.infoBold('fcm-local')}`)
   if (isRunning) {
     lines.push(`  ${themeColors.dim('Uptime')}  ${themeColors.success(formatRouterDuration(snapshot.uptimeSeconds))}  ${themeColors.dim('Requests routed:')} ${themeColors.info(String(snapshot.requestsRouted))}`)
+  } else {
+    lines.push(`  ${themeColors.dim('Hint')}    ${themeColors.dim('Start the daemon to enable routing')}`)
   }
   lines.push(`  ${separator}`)
   lines.push('')
@@ -868,7 +891,8 @@ export function renderRouterDashboard(state, deps = {}) {
   const cursor = state.routerDashboardCursorIndex ?? 0
 
   if (favorites.length === 0) {
-    lines.push(`  ${themeColors.warning('No favorites yet.')} ${themeColors.dim('Press Esc, then F on any model to add it.')}`)
+    lines.push(`  ${themeColors.warning('No favorites yet. Press Esc, then F on any model to add it.')}`)
+    lines.push(`  ${themeColors.dim('Favorites become your router fallback chain — #1 is tried first.')}`)
   } else {
     // 📖 Priority keycap glyphs for the fallback order
     const KEYCAPS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟']
@@ -880,8 +904,13 @@ export function renderRouterDashboard(state, deps = {}) {
       healthByKey.set(`${m.provider}/${m.model}`, m)
     }
 
-    // 📖 Column headers
-    lines.push(`  ${themeColors.dim(padEndDisplay('PRI', 4))} ${themeColors.dim(padEndDisplay('MODEL', 42))} ${themeColors.dim(padEndDisplay('DAEMON STATUS', 16))} ${themeColors.dim(padEndDisplay('AVG PING', 8))} ${themeColors.dim('VERDICT')}`)
+    // 📖 The model the daemon will serve on the next request (priority-first,
+    // 📖 see issue #120). Marked with ▶ NEXT so the user understands the top
+    // 📖 of the chain is what actually handles traffic — not whichever is fastest.
+    const nextToServeKey = snapshot.routingOrder?.[0]?.key || null
+
+    // 📖 Column headers — leading space lines up with the ▶ NEXT marker column.
+    lines.push(`   ${themeColors.dim(padEndDisplay('PRI', 4))} ${themeColors.dim(padEndDisplay('MODEL', 42))} ${themeColors.dim(padEndDisplay('STATUS', 16))} ${themeColors.dim(padEndDisplay('AVG PING', 8))} ${themeColors.dim('VERDICT')}`)
 
     for (let i = 0; i < favorites.length; i++) {
       const favKey = favorites[i]
@@ -926,14 +955,14 @@ export function renderRouterDashboard(state, deps = {}) {
       }
 
       // 📖 Get global metrics from main table state
-      let avgPingDisplay = themeColors.dim('———')
+      let avgPingDisplay = themeColors.dim('—')
       let verdictDisplay = themeColors.dim('Pending ⏳')
 
       if (mainResult) {
         // Avg Ping
         const avg = getAvg(mainResult)
         if (avg !== Infinity) {
-          const str = String(avg).padEnd(4)
+          const str = `${avg}ms`
           avgPingDisplay = avg < 500 ? themeColors.metricGood(str) : avg < 1500 ? themeColors.metricWarn(str) : themeColors.metricBad(str)
         }
 
@@ -957,7 +986,13 @@ export function renderRouterDashboard(state, deps = {}) {
         verdictDisplay = padEndDisplay(verdictDisplay, 14)
       }
 
-      const rowText = `  ${padEndDisplay(priorityGlyph(i), 4)} ${padEndDisplay(favKey, 42)} ${padEndDisplay(healthLabel, 16)} ${padEndDisplay(avgPingDisplay, 8)} ${verdictDisplay}`
+      // 📖 Prefix the next-to-serve model with a ▶ NEXT marker so the active
+      // 📖 routing target is obvious. Only shown when the daemon is actually
+      // 📖 running and has reported a routing order (stopped → no marker).
+      const nextMarker = (nextToServeKey && nextToServeKey === favKey)
+        ? themeColors.successBold('▶')
+        : themeColors.dim(' ')
+      const rowText = ` ${nextMarker} ${padEndDisplay(priorityGlyph(i), 4)} ${padEndDisplay(favKey, 42)} ${padEndDisplay(healthLabel, 16)} ${padEndDisplay(avgPingDisplay, 8)} ${verdictDisplay}`
 
       if (isCursorRow) {
         lines.push(themeColors.bgCursor(rowText + ' '.repeat(Math.max(0, width - displayWidth(rowText) - 3))))
@@ -996,14 +1031,14 @@ export function renderRouterDashboard(state, deps = {}) {
   lines.push(`  ${separator}`)
   lines.push('')
 
-  // ── Token Summary (compact) ─────────────────────────────────────────────────
-  lines.push(`  ${themeColors.textBold('Tokens')}  ${themeColors.dim('Today:')} ${themeColors.info(formatTokenTotalCompact(snapshot.tokens.today.total_tokens))}  ${themeColors.dim('All-time:')} ${themeColors.info(formatTokenTotalCompact(snapshot.tokens.all_time.total_tokens))}  ${themeColors.dim('Requests:')} ${snapshot.tokens.today.requests}/${snapshot.tokens.all_time.requests}`)
+  // ── Token Summary (compact, visual) ─────────────────────────────────────────
+  lines.push(`  ${themeColors.textBold('📊 Tokens')}  ${themeColors.dim('Today:')} ${themeColors.info(formatTokenTotalCompact(snapshot.tokens.today.total_tokens))} ${themeColors.dim(`(${snapshot.tokens.today.requests} req)`)}  ${themeColors.dim('Lifetime:')} ${themeColors.info(formatTokenTotalCompact(snapshot.tokens.all_time.total_tokens))} ${themeColors.dim(`(${snapshot.tokens.all_time.requests} req)`)}`)
 
   // ── Live Request Log (compact) ──────────────────────────────────────────────
   const requestRows = requestLogRows(state, snapshot)
+  lines.push('')
+  lines.push(`  ${themeColors.textBold('Recent Requests')}`)
   if (requestRows.length > 0) {
-    lines.push('')
-    lines.push(`  ${themeColors.textBold('Recent Requests')}`)
     const header = `  ${padEndDisplay('Time', 10)} ${padEndDisplay('Model', 34)} ${padEndDisplay('Status', 8)} ${padEndDisplay('Latency', 9)} Detail`
     lines.push(themeColors.dim(header))
     for (const row of requestRows.slice(0, 6)) {
@@ -1025,6 +1060,8 @@ export function renderRouterDashboard(state, deps = {}) {
         `${compactText(detail, Math.max(10, width - 68)).trimEnd()}`
       )
     }
+  } else {
+    lines.push(`  ${themeColors.dim('No requests routed yet')}`)
   }
 
   // ── Health check speed ──────────────────────────────────────────────────────
@@ -1048,7 +1085,8 @@ export function renderRouterDashboard(state, deps = {}) {
 
   // ── Footer ──────────────────────────────────────────────────────────────────
   lines.push('')
-  lines.push(`  ${themeColors.hotkey('↑↓')} ${themeColors.dim('Navigate')}  ${themeColors.dim('•')}  ${themeColors.hotkey('Shift+↑↓')} ${themeColors.dim('Reorder')}  ${themeColors.dim('•')}  ${themeColors.hotkey('S')} ${themeColors.dim(isStopped ? 'Start daemon' : 'Stop daemon')}  ${themeColors.dim('•')}  ${themeColors.hotkey('I')} ${themeColors.dim(`Health check: ${probeLabel}`)}  ${themeColors.dim('•')}  ${themeColors.hotkey('C')} ${themeColors.dim('Clear log')}  ${themeColors.dim('•')}  ${themeColors.hotkey('Esc')} ${themeColors.dim('Back')}`)
+  lines.push(`  ${separator}`)
+  lines.push(`  ${themeColors.hotkey('↑↓')} ${themeColors.dim('Navigate')}  ${themeColors.dim('•')}  ${themeColors.hotkey('Shift+↑↓')} ${themeColors.dim('Reorder')}  ${themeColors.dim('•')}  ${themeColors.hotkey('S')} ${themeColors.dim(isStopped ? 'Start daemon' : 'Stop daemon')}  ${themeColors.dim('•')}  ${themeColors.hotkey('I')} ${themeColors.dim(`Health check: ${probeLabel}`)}  ${themeColors.dim('•')}  ${themeColors.hotkey('C')} ${themeColors.dim('Clear log')}  ${themeColors.dim('•')}  ${themeColors.hotkey('R')} ${themeColors.dim('Sync best')}  ${themeColors.dim('•')}  ${themeColors.hotkey('Esc')} ${themeColors.dim('Back')}`)
 
   const { visible, offset } = sliceOverlayLines(lines, state.routerDashboardScrollOffset || 0, state.terminalRows || 24)
   state.routerDashboardScrollOffset = offset
