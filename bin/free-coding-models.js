@@ -10,7 +10,7 @@
 // 📖 npm install running on the same machine.
 // 📖 IMPORTANT: these checks MUST run synchronously before any static imports
 // 📖 resolve, because router-daemon.js reads FCM_DEV at module load time.
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 if (process.argv.includes('--dev') || (!process.env.FCM_DEV && existsSync(join(dirname(fileURLToPath(import.meta.url)), '..', '.git')))) {
@@ -78,13 +78,33 @@ async function main() {
     })
     : { latestVersion: null, allowedOutdated: false, warningMessage: null, failures: 0, checked: false, updated: false, blocked: false };
 
-  if (startupUpdate.updated) return;
+  if (startupUpdate.updated) {
+    try {
+      // 📖 Stop any running daemon so that the relaunch/restart will start the new version.
+      const { stopRouterDaemon } = await import('../src/core/router-daemon.js');
+      await stopRouterDaemon();
+    } catch {}
+    return;
+  }
   if (startupUpdate.blocked) process.exit(1);
   if (startupUpdate.allowedOutdated) {
     process.env.FCM_UPDATE_ALLOWED_OUTDATED = '1';
     process.env.FCM_UPDATE_LATEST_VERSION = startupUpdate.latestVersion || '';
     process.env.FCM_UPDATE_WARNING_MESSAGE = startupUpdate.warningMessage || '';
     process.env.FCM_UPDATE_FAILURES = String(startupUpdate.failures || 0);
+  }
+
+  // 📖 If the daemon is running an outdated version, stop it so it will restart on the new version.
+  if (!cliArgs.daemonStopMode && !cliArgs.daemonStatusMode) {
+    try {
+      const { getRouterDaemonStatus, stopRouterDaemon } = await import('../src/core/router-daemon.js');
+      const status = await getRouterDaemonStatus();
+      const LOCAL_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+      if (status.ok && status.version && status.version !== LOCAL_VERSION) {
+        console.log(chalk.yellow(`  ⚠ Outdated daemon version v${status.version} detected (current: v${LOCAL_VERSION}). Stopping old daemon...`));
+        await stopRouterDaemon();
+      }
+    } catch {}
   }
 
   // 📖 Standalone web dashboard: same full-catalog ping UI as the TUI, served

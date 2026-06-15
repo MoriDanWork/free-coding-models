@@ -1379,6 +1379,7 @@ class RouterRuntime {
       // 📖 the Playground showed "router offline" even when the Router card
       // 📖 said "Running" — both hit /api/router/status but read different fields.
       running: true,
+      version: LOCAL_VERSION,
       pid: process.pid,
       port: this.port,
       enabled: router.enabled,
@@ -3526,7 +3527,13 @@ export async function getRouterDaemonStatus() {
 
 export async function startRouterDaemonBackground() {
   const existing = await getRouterDaemonStatus()
-  if (existing.ok) return { ...existing, alreadyRunning: true }
+  if (existing.ok) {
+    if (existing.version && existing.version !== LOCAL_VERSION) {
+      await stopRouterDaemon()
+    } else {
+      return { ...existing, alreadyRunning: true }
+    }
+  }
 
   const child = fork(CLI_ENTRY_PATH, ['--daemon'], {
     detached: true,
