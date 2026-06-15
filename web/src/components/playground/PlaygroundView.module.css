@@ -166,6 +166,16 @@
   min-height: 320px;
 }
 
+/* 📖 Flex container that fills the modal body and hosts either the router
+   daemon start/starting panels or the shared <PlaygroundChat> (which itself is
+   a column flex that scrolls internally and pins the input at the bottom). */
+.chatBody {
+  flex: 1;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
 .empty {
   flex: 1;
   display: flex;

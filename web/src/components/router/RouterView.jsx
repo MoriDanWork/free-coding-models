@@ -10,8 +10,10 @@ import {
   IconCopy, IconCheck, IconChevronDown, IconChevronUp,
   IconActivity, IconServer, IconPlus, IconX, IconGripVertical,
   IconArrowRight, IconArrowUp, IconArrowDown, IconTrash, IconList, IconWand,
+  IconSend, IconBolt,
 } from '@tabler/icons-react'
 import styles from './RouterView.module.css'
+import PlaygroundChat from '../playground/PlaygroundChat.jsx'
 
 function formatUptime(seconds) {
   if (!seconds || seconds <= 0) return '—'
@@ -74,6 +76,12 @@ export default function RouterView({ onClose, onToast }) {
   const saveTimerRef = useRef(null)
   const hasAutoExpandedLog = useRef(false)
 
+  // 📖 Probe state — AI Latency benchmarks launched on the active set. Progress
+  // 📖 comes from /stats.globalBenchmark (polled), results land on
+  // 📖 /stats.models[].benchmark. `probePolling` speeds up polling while running
+  // 📖 so the progress bar + per-model latencies update live.
+  const [probePolling, setProbePolling] = useState(false)
+
   const fetchStatus = useCallback(async () => {
     try {
       const resp = await fetch('/api/router/status')
@@ -114,6 +122,23 @@ export default function RouterView({ onClose, onToast }) {
     }, 5000)
     return () => clearInterval(interval)
   }, [fetchStatus, fetchSets, fetchCatalog])
+
+  // 📖 Fast-poll /stats while a probe is running so the progress bar and
+  // 📖 per-model AI latencies stream in live (every 1.2s instead of 5s).
+  // 📖 Stops the moment the daemon reports the global benchmark as done.
+  useEffect(() => {
+    if (!probePolling) return undefined
+    const interval = setInterval(() => { void fetchStatus() }, 1200)
+    return () => clearInterval(interval)
+  }, [probePolling, fetchStatus])
+
+  // 📖 Keep probePolling in sync with the daemon's real state: if it says the
+  // 📖 global benchmark stopped, drop our fast-poll flag so we go back to 5s.
+  useEffect(() => {
+    if (probePolling && stats?.globalBenchmark && !stats.globalBenchmark.running) {
+      setProbePolling(false)
+    }
+  }, [stats?.globalBenchmark, probePolling])
 
   // 📖 Cleanup the "saved" indicator so it fades back to idle after 1.5s.
   useEffect(() => {
@@ -307,6 +332,44 @@ export default function RouterView({ onClose, onToast }) {
     }
   }, [activeSetName, fetchSets, onToast])
 
+  // 📖 handleProbeAll — launch AI Latency benchmarks on every model in the
+  // 📖 active set, inside the DAEMON. Progress + results stream back through
+  // 📖 /stats (globalBenchmark + per-model benchmark), which the fast-poll
+  // 📖 effect above picks up every 1.2s. Disabled while already running.
+  const handleProbeAll = async () => {
+    if (!activeSetName || probePolling) return
+    if (localModels.length === 0) {
+      onToast?.('Add models to the set first, then probe.', 'info')
+      return
+    }
+    try {
+      const probeModels = localModels.map((m) => ({ providerKey: m.provider, modelId: m.model }))
+      const resp = await fetch('/api/router/probe-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ models: probeModels }),
+      })
+      const data = await resp.json().catch(() => null)
+      if (!resp.ok || !resp.status || resp.status === 409) {
+        throw new Error(data?.error || 'Probe already running')
+      }
+      setProbePolling(true)
+      const total = data?.total ?? localModels.length
+      onToast?.(`Probing ${total} model${total === 1 ? '' : 's'} for AI Latency…`, 'info')
+      await fetchStatus()
+    } catch (err) {
+      onToast?.(`Probe failed: ${err.message}`, 'error')
+      setProbePolling(false)
+    }
+  }
+
+  // 📖 The "Test Router" mini playground is now rendered by the shared
+  // 📖 <PlaygroundChat> component (model="fcm"), which streams the reply
+  // 📖 through /api/playground/chat and shows the harmonized metadata row
+  // 📖 (served model · ms · tok · t/s) under every reply. The router's
+  // 📖 Primary pick is passed as `targetLabel` so the user sees which model
+  // 📖 the priority-first router will try first under their user bubble.
+
   // ── Drag and drop state ───────────────────────────────────────────────
   // We keep a local copy of `models` so the drag UX is instant — the
   // server is updated only when the user actually drops the row.
@@ -432,6 +495,15 @@ export default function RouterView({ onClose, onToast }) {
   // 📖 a sensible priority chain). See issue #120.
   const routingOrder = stats?.routingOrder || []
   const nextToServeKey = routingOrder.length > 0 ? routingOrder[0].key : null
+
+  // 📖 Benchmark results keyed by "provider/model" so each set row can show
+  // 📖 its live AI Latency + TPS after a probe. Built from /stats.models.
+  const benchmarkByKey = new Map()
+  for (const m of (stats?.models || [])) {
+    if (m && typeof m.key === 'string') benchmarkByKey.set(m.key, m)
+  }
+  const globalBenchmark = stats?.globalBenchmark || null
+  const probeActive = Boolean(globalBenchmark?.running) || probePolling
 
   // 📖 Auto-expand the request log the first time requests appear.
   useEffect(() => {
@@ -603,6 +675,17 @@ export default function RouterView({ onClose, onToast }) {
                     <IconWand size={11} />
                     Sync best
                   </button>
+                  {/* 📖 Probe all — run AI Latency benchmarks on every model in the
+                      set. Results stream into the rows below (AI Lat column). */}
+                  <button
+                    className={`${styles.smallBtn} ${probeActive ? styles.probeBtnActive : ''}`}
+                    onClick={handleProbeAll}
+                    disabled={probeActive || saveStatus.kind === 'saving' || localModels.length === 0}
+                    title="Benchmark AI Latency + TPS on every model in this set"
+                  >
+                    <IconBolt size={11} />
+                    {probeActive ? 'Probing…' : 'Probe all'}
+                  </button>
                   <button
                     className={styles.primaryBtn}
                     onClick={() => setPickerOpen((v) => !v)}
@@ -613,6 +696,26 @@ export default function RouterView({ onClose, onToast }) {
                   </button>
                 </div>
               </div>
+
+              {/* 📖 Probe progress bar — shown while AI Latency benchmarks run
+                  across the set. Reads /stats.globalBenchmark (fast-polled). */}
+              {probeActive && globalBenchmark && (
+                <div className={styles.probeProgress}>
+                  <div className={styles.probeProgressLabel}>
+                    <IconBolt size={11} />
+                    AI Latency probe
+                    <span className={styles.probeProgressCount}>
+                      {globalBenchmark.completed} / {globalBenchmark.total || localModels.length}
+                    </span>
+                  </div>
+                  <div className={styles.probeProgressBar}>
+                    <div
+                      className={styles.probeProgressFill}
+                      style={{ width: `${Math.min(100, ((globalBenchmark.completed || 0) / Math.max(1, globalBenchmark.total || localModels.length)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {localModels.length === 0 ? (
                 <div className={styles.setEmpty}>
@@ -639,6 +742,11 @@ export default function RouterView({ onClose, onToast }) {
                   {localModels.map((m, idx) => {
                     const key = `${m.provider}/${m.model}`
                     const cb = circuitBreakers[key] || {}
+                    // 📖 Per-model AI Latency from the latest probe. `bm` is the
+                    // 📖 raw benchmark result; `bmLoading` is true while it runs.
+                    const bmEntry = benchmarkByKey.get(key)
+                    const bm = bmEntry?.benchmark || null
+                    const bmLoading = Boolean(bmEntry?.isBenchmarking)
                     const isDragging = draggingKey === key
                     const dropAbove = dropPosition?.key === key && dropPosition.side === 'above'
                     const dropBelow = dropPosition?.key === key && dropPosition.side === 'below'
@@ -671,6 +779,18 @@ export default function RouterView({ onClose, onToast }) {
                         <span className={styles.setKey}>{key}</span>
                         {m.tier && <span className={styles.setTier}>{m.tier}</span>}
                         <CircuitBadge state={cb.state || m.state} />
+                        {/* 📖 AI Latency — populated by "Probe all". Shows a spinner
+                            while benchmarking, the latency+TPS once done, or a dim
+                            placeholder before the first probe. */}
+                        <span className={styles.aiLatencyCell} title={bm ? `AI Latency: ${Math.round(bm.totalMs)}ms · TPS: ${(bm.tokensPerSecond ?? 0).toFixed(1)}` : 'Run Probe all to measure AI Latency'}>
+                          {bmLoading
+                            ? <span className={styles.aiLatencySpin}>···</span>
+                            : bm?.ok
+                              ? <><span className={styles.aiLatencyMs}>{Math.round(bm.totalMs)}ms</span>{bm.tokensPerSecond != null && bm.tokensPerSecond > 0 && <span className={styles.aiLatencyTps}>{bm.tokensPerSecond.toFixed(1)} t/s</span>}</>
+                              : bm && !bm.ok
+                                ? <span className={styles.aiLatencyErr}>fail</span>
+                                : <span className={styles.aiLatencyNone}>—</span>}
+                        </span>
                         <div className={styles.setRowBtns}>
                           <button
                             className={styles.iconBtn}
@@ -815,6 +935,30 @@ export default function RouterView({ onClose, onToast }) {
                   </div>
                 )
               )}
+            </div>
+          )}
+
+          {/* 📖 Test Router — the shared PlaygroundChat core, routed through
+              `fcm` so the user can sanity-check the priority-first router right
+              from this view. The router's Primary pick is passed as targetLabel
+              so it appears under the user bubble; the served model (+ ms / tok /
+              t/s) appears under the reply and reveals any failover. Only shown
+              when running (needs the daemon). */}
+          {running && (
+            <div className={styles.section}>
+              <h3 className={styles.sectionTitle}>
+                <IconSend size={14} />
+                Test Router
+                <span className={styles.miniPgHint}>routes through <code>fcm</code> — try the fallback chain</span>
+              </h3>
+              <PlaygroundChat
+                model="fcm"
+                variant="mini"
+                disabled={!running}
+                targetLabel={nextToServeKey || 'fcm'}
+                placeholder="Test the router… (e.g. write a haiku about TypeScript)"
+                emptyHint="Send a message to see which model the router picks, with latency + TPS."
+              />
             </div>
           )}
 

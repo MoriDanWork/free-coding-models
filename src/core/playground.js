@@ -22,7 +22,7 @@
  */
 
 import { displayWidth, sliceOverlayLines, tintOverlayLines } from '../tui/render-helpers.js'
-import { ROUTER_PORT_PATH } from './router-daemon.js'
+import { ROUTER_PORT_PATH, getRouterPortPath } from './router-daemon.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { themeColors } from '../tui/theme.js'
 
@@ -295,10 +295,12 @@ async function readSseStream(resp, fetchFn, controller) {
  * 📖 can stand alone in the TUI process.
  */
 async function readDaemonPort() {
-  // 📖 Try the recorded port file first.
+  // 📖 Try the recorded port file first. Use the dynamic resolver so dev
+  // 📖 checkouts (FCM_DEV=1) read the `-dev` port file and find the dev daemon.
   try {
-    if (existsSync(ROUTER_PORT_PATH)) {
-      const raw = readFileSync(ROUTER_PORT_PATH, 'utf8').trim()
+    const portPath = getRouterPortPath()
+    if (existsSync(portPath)) {
+      const raw = readFileSync(portPath, 'utf8').trim()
       if (/^\d+$/.test(raw)) return Number(raw)
     }
   } catch {}

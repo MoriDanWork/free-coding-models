@@ -50,7 +50,7 @@ import { benchmarkModel, BENCHMARK_TIMEOUT_MS, BENCHMARK_PROMPT } from '../src/c
 import { getInstallTargetModes, installProviderEndpoints, getConfiguredInstallableProviders, getProviderCatalogModels } from '../src/core/endpoint-installer.js'
 import { isModelCompatibleWithTool } from '../src/core/tool-metadata.js'
 import { sendUsageTelemetry } from '../src/core/telemetry.js'
-import { getRouterDaemonStatus, startRouterDaemonBackground, stopRouterDaemon, ROUTER_TOKENS_PATH } from '../src/core/router-daemon.js'
+import { getRouterDaemonStatus, startRouterDaemonBackground, stopRouterDaemon, ROUTER_TOKENS_PATH, getRouterPortPath } from '../src/core/router-daemon.js'
 import { scanAllToolConfigs, softDeleteModel } from '../src/core/installed-models-manager.js'
 import {
   TASK_TYPES,
@@ -590,7 +590,10 @@ function getEndpointModel(providerKey, modelId) {
 
 async function readDaemonPort() {
   try {
-    const raw = readFileSync(`${process.env.HOME}/.free-coding-models-daemon.port`, 'utf8').trim()
+    // 📖 Use the dynamic port-path resolver so dev checkouts (FCM_DEV=1) read
+    // 📖 the `-dev` port file and find the dev daemon, instead of always
+    // 📖 reading the production file and missing it. Mirrors router-dashboard.js.
+    const raw = readFileSync(getRouterPortPath(), 'utf8').trim()
     if (/^\d+$/.test(raw)) return Number(raw)
   } catch {}
   return null
@@ -1460,6 +1463,26 @@ async function handleRequest(req, res) {
         return
       }
 
+      // 📖 /api/router/probe-all — launch AI Latency benchmarks on the active
+      // 📖 set's models (or an explicit list) inside the DAEMON process. Results
+      // 📖 flow back through /api/router/stats (per-model `benchmark` field +
+      // 📖 `globalBenchmark` progress), so the Router Dashboard's set list shows
+      // 📖 live AI latency after a probe. Proxied to the daemon's
+      // 📖 /api/global-benchmark (longer timeout — probing ~10 models takes time).
+      case '/api/router/probe-all': {
+        if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
+        const body = await readJsonBody(req)
+        const proxy = await proxyToDaemon('/api/global-benchmark', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+          timeoutMs: 60000,
+        })
+        if (proxy?.ok || proxy?.status === 202) { sendJson(res, proxy?.status || 200, proxy.data); return }
+        sendJson(res, proxy?.status || 502, proxy?.data || { error: 'Daemon not reachable' })
+        return
+      }
+
       case '/api/router/catalog': {
         // 📖 Catalog of routeable models for the Web Router Dashboard's
         // 📖 "Add model" picker. Proxies the daemon when running, falls
@@ -1629,12 +1652,19 @@ async function handleRequest(req, res) {
           })
           if (wantsStream) {
             // 📖 Pipe SSE events straight from the upstream to the browser.
-            res.writeHead(upstreamResp.status, {
+            // 📖 Forward the daemon's x-fcm-router-model header so the browser
+            // 📖 knows WHICH model the priority-first router actually served
+            // 📖 (the chunks only carry the bare model id, not provider/model).
+            // 📖 See issue #120 — this makes the served-model badge work.
+            const streamHeaders = {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
               'Connection': 'keep-alive',
               'X-Accel-Buffering': 'no',
-            })
+            }
+            const servedModel = upstreamResp.headers.get('x-fcm-router-model')
+            if (servedModel) streamHeaders['x-fcm-router-model'] = servedModel
+            res.writeHead(upstreamResp.status, streamHeaders)
             const reader = upstreamResp.body?.getReader()
             if (!reader) { res.end(); clearTimeout(timeout); return }
             try {

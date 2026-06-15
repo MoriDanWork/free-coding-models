@@ -37,7 +37,7 @@ import {
   saveConfig,
 } from './config.js'
 import { resolveCloudflareUrl } from './ping.js'
-import { ROUTER_PID_PATH } from './router-daemon.js'
+import { ROUTER_PID_PATH, getRouterPidPath } from './router-daemon.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { TIER_ORDER, parseSweToNum } from './utils.js'
 import { isRouteableProvider } from './shared-helpers.js'
@@ -308,8 +308,10 @@ export async function probeModel(candidate, apiKey) {
  */
 function signalDaemonReload() {
   try {
-    if (!existsSync(ROUTER_PID_PATH)) return false
-    const pid = Number(readFileSync(ROUTER_PID_PATH, 'utf8').trim())
+    // 📖 Dynamic resolver so dev checkouts signal the dev daemon (FCM_DEV=1).
+    const pidPath = getRouterPidPath()
+    if (!existsSync(pidPath)) return false
+    const pid = Number(readFileSync(pidPath, 'utf8').trim())
     if (!Number.isFinite(pid) || pid <= 0) return false
     process.kill(pid, 'SIGHUP')
     return true

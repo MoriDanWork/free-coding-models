@@ -12,7 +12,7 @@
  * @functions ExpandedDetailRow → main component
  */
 import { useState, useRef, useCallback } from 'react'
-import { IconSend, IconPlayerPlayFilled, IconStar, IconStarFilled, IconLoader } from '@tabler/icons-react'
+import { IconPlayerPlayFilled, IconStar, IconStarFilled, IconLoader } from '@tabler/icons-react'
 import TierBadge from '../atoms/TierBadge.jsx'
 import VerdictBadge from '../atoms/VerdictBadge.jsx'
 import StatusDot from '../atoms/StatusDot.jsx'
@@ -20,6 +20,7 @@ import StabilityCell from '../atoms/StabilityCell.jsx'
 import { formatAvg, pingClass } from '../../utils/format.js'
 import { sweClass } from '../../utils/ranks.js'
 import LaunchButton from '../launch/LaunchButton.jsx'
+import PlaygroundChat from '../playground/PlaygroundChat.jsx'
 import styles from './ExpandedDetailRow.module.css'
 
 /**
@@ -61,12 +62,6 @@ export default function ExpandedDetailRow({
   onCycleToolMode,
   onOpenFallback,
 }) {
-  // ─── Mini Playground state ───
-  const [playgroundInput, setPlaygroundInput] = useState('')
-  const [playgroundResponse, setPlaygroundResponse] = useState('')
-  const [playgroundBusy, setPlaygroundBusy] = useState(false)
-  const playgroundAbort = useRef(null)
-
   // ─── AI Latency benchmark state ───
   const [benchState, setBenchState] = useState('idle') // 'idle' | 'running' | 'done' | 'error'
   const [benchMetrics, setBenchMetrics] = useState({ latency: null, tokens: null, tps: null })
@@ -79,77 +74,6 @@ export default function ExpandedDetailRow({
   const isFav = favorites?.isFavorite(model) ?? false
   const avgData = formatAvg(model.avg)
   const avgCls = avgData.cls || pingClass(model.avg)
-
-  // ─── Mini Playground: send a chat message ───
-  const handlePlaygroundSend = useCallback(async () => {
-    const text = playgroundInput.trim()
-    if (!text || playgroundBusy) return
-
-    setPlaygroundBusy(true)
-    setPlaygroundResponse('')
-    setPlaygroundInput('')
-
-    // Cancel any previous request
-    if (playgroundAbort.current) playgroundAbort.current.abort()
-    const controller = new AbortController()
-    playgroundAbort.current = controller
-
-    try {
-      const res = await fetch('/api/playground/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: `${model.providerKey}/${model.modelId}`,
-          messages: [{ role: 'user', content: text }],
-          stream: true,
-          temperature: 0.7,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => `HTTP ${res.status}`)
-        setPlaygroundResponse(`Error: ${errText}`)
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let accumulated = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        // Parse SSE lines
-        const lines = chunk.split('\n')
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const payload = line.slice(6).trim()
-          if (payload === '[DONE]') continue
-
-          try {
-            const json = JSON.parse(payload)
-            const content = json.choices?.[0]?.delta?.content
-            if (content) {
-              accumulated += content
-              setPlaygroundResponse(accumulated)
-            }
-          } catch {
-            // Non-JSON line — ignore
-          }
-        }
-      }
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        setPlaygroundResponse(`Error: ${err.message}`)
-      }
-    } finally {
-      setPlaygroundBusy(false)
-      playgroundAbort.current = null
-    }
-  }, [playgroundInput, playgroundBusy, model.providerKey, model.modelId])
 
   // ─── AI Latency: run benchmark ───
   const handleBenchStart = useCallback(async () => {
@@ -349,47 +273,20 @@ export default function ExpandedDetailRow({
           </div>
         </div>
 
-        {/* ═══════ Column 2: Mini Playground ═══════ */}
+        {/* ═══════ Column 2: Mini Playground (shared PlaygroundChat core) ═══════ */}
         <div className={styles.col}>
           <div className={styles.playgroundHeader}>
             💬 Mini Playground — {model.label}
           </div>
-          <div className={styles.inputRow}>
-            <input
-              type="text"
-              className={styles.inputField}
+          <div className={styles.playgroundWrap}>
+            <PlaygroundChat
+              model={`${model.providerKey}/${model.modelId}`}
+              variant="mini"
+              disabled={!model.hasApiKey}
               placeholder="Type a message…"
-              value={playgroundInput}
-              onChange={e => setPlaygroundInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handlePlaygroundSend()
-              }}
-              disabled={playgroundBusy}
+              emptyTitle={`Test ${model.label}`}
+              emptyHint="Send a message to test this model. Responses stream in real time with latency + TPS."
             />
-            <button
-              className={styles.sendBtn}
-              onClick={handlePlaygroundSend}
-              disabled={playgroundBusy || !playgroundInput.trim()}
-              title="Send message"
-            >
-              {playgroundBusy
-                ? <IconLoader size={14} stroke={1.8} className={styles.spinning} />
-                : <IconSend size={14} stroke={1.8} />
-              }
-            </button>
-          </div>
-          <div className={styles.responseArea}>
-            {playgroundBusy && !playgroundResponse ? (
-              <span className={styles.responsePlaceholder}>
-                Waiting for response…
-              </span>
-            ) : playgroundResponse ? (
-              playgroundResponse
-            ) : (
-              <span className={styles.responsePlaceholder}>
-                Send a message to test this model. Responses stream in real time.
-              </span>
-            )}
           </div>
         </div>
 

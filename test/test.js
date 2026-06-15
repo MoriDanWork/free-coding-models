@@ -3093,6 +3093,34 @@ describe('router daemon integration hardening', () => {
     })
   })
 
+  // 📖 Regression for the Playground "router offline" bug: /health and /stats
+  // 📖 MUST report `running: true` alongside `ok: true`. The Playground reads
+  // 📖 `status.running` while the Router card reads `status.ok` — if they
+  // 📖 disagree, the user starts the router, sees it "Running", then opens the
+  // 📖 Playground and gets a false "router offline". Both fields must agree.
+  it('reports running: true on /health and /stats so the Playground trusts the daemon', async () => {
+    const config = buildRouterTestConfig([
+      { provider: 'groq', model: ROUTER_TEST_MODELS.groqFast, priority: 1 },
+    ])
+    await withRouterTestServer(config, async ({ baseUrl }) => {
+      const health = await (await fetch(`${baseUrl}/health`)).json()
+      const stats = await (await fetch(`${baseUrl}/stats`)).json()
+
+      assert.equal(health.ok, true)
+      assert.equal(health.running, true, '/health must include running: true')
+      assert.equal(stats.ok, true)
+      assert.equal(stats.running, true, '/stats must include running: true')
+      // 📖 Probe progress + per-model benchmark fields power the Router Dashboard
+      // 📖 "Probe all" button — assert the shape so the UI never breaks silently.
+      assert.ok(stats.globalBenchmark && typeof stats.globalBenchmark === 'object')
+      assert.equal(stats.globalBenchmark.running, false)
+      assert.equal(typeof stats.globalBenchmark.total, 'number')
+      assert.ok(Array.isArray(stats.models))
+      assert.equal(stats.models.length, 1)
+      assert.equal(stats.models[0].isBenchmarking, false)
+    })
+  })
+
   it('serves /api/models with model catalog data', async () => {
     const config = buildRouterTestConfig([])
     await withRouterTestServer(config, async ({ baseUrl }) => {

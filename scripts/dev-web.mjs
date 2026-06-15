@@ -45,17 +45,22 @@ async function main() {
     }
   }
 
-  // Write a small wrapper script so we can spawn it cleanly
-  // (avoids ESM require() issues with stdio piping)
+  // 📖 Write a small wrapper script so we can spawn it cleanly
+  // 📖 (avoids ESM require() issues with stdio piping). We set FCM_DEV=1
+  // 📖 BEFORE importing the server so the whole backend (web server, daemon
+  // 📖 status proxy, readDaemonPort) resolves the DEV port/pid files + dev port
+  // 📖 range. Without this, `pnpm dev` read the prod daemon files and the Router
+  // 📖 view couldn't see the dev daemon — the user had to click "Start" by hand.
   const wrapperPath = join(ROOT, '.dev-backend-tmp.mjs')
   writeFileSync(wrapperPath, `
+process.env.FCM_DEV = '1'
 import { startWebServer } from './web/server.js'
 startWebServer(${API_PORT}, { open: false, startPingLoop: true }).then(() => {}).catch(console.error)
 `)
 
-  // Spawn backend
-  console.log(`\n  🚀 Backend on :${API_PORT}...\n`)
-  const api = spawn('node', [wrapperPath], { stdio: 'inherit', cwd: ROOT })
+  // Spawn backend (inherit FCM_DEV=1 from this process env too, belt + suspenders)
+  console.log(`\n  🚀 Backend on :${API_PORT} (FCM_DEV=1)...\n`)
+  const api = spawn('node', [wrapperPath], { stdio: 'inherit', cwd: ROOT, env: { ...process.env, FCM_DEV: '1' } })
 
   // Wait for port to be ready (poll)
   let portReady = false

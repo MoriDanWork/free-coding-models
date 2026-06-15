@@ -184,7 +184,7 @@ and every TUI capability that's safe to port ships behind a button or chip.
 | **Theme** | Tri-state `auto / dark / light` cycle (TUI `G`) — auto follows the OS preference. |
 | **Smart Recommend** | Header "Recommend" opens the 3-question wizard, runs the 10s analysis phase, then returns the Top 3 shared-score recommendations with Pin + install-endpoint actions. |
 | **Endpoint installs** | The Web never starts external tools. It writes the selected provider/model endpoint into the chosen tool config (`/api/install-endpoint`), then users start their tool themselves. |
-| **Router Dashboard** | Header "Router" opens a full modal with daemon start/stop, model health table with circuit breaker badges, request log, probe mode selector, and quick-setup card (copy base URL + model to clipboard). |
+| **Router Dashboard** | Header "Router" opens a full modal with daemon start/stop, model health table with circuit breaker badges, request log, probe mode selector, quick-setup card (copy base URL + model to clipboard), **"Probe all" AI Latency/TPS benchmarking**, and a **"Test Router" mini playground** to live-route chats through the fallback chain. |
 | **Token Usage** | Integrated inside Analytics: today + all-time summary cards, 7-day usage bar chart, top models and top providers breakdown. |
 | **Installed Models** | Header overflow → "Installed Models" opens a modal that scans all tool configs (Goose, Crush, Aider, Kilo, Qwen, Pi, OpenHands, Amp) and shows configured models with soft-delete (backup saved). |
 | **Install Endpoints wizard** | Header overflow → "Install Endpoints" opens a 4-step wizard: pick provider → pick tool → select models → install. Writes managed provider catalogs into tool configs using the same engine as the TUI. |

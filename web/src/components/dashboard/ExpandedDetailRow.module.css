@@ -123,6 +123,15 @@
   margin-bottom: 2px;
 }
 
+/* 📖 Wrapper that lets the shared PlaygroundChat fill the column height so its
+   transcript scrolls and the input stays pinned to the bottom. */
+.playgroundWrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+}
+
 .inputRow {
   display: flex;
   gap: 6px;

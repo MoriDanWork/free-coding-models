@@ -1233,6 +1233,11 @@ class RouterRuntime {
       last_latency_ms: candidate.stats.last?.latencyMs ?? null,
       uptime: candidate.stats.uptime,
       last_error: candidate.circuit?.lastError || null,
+      // 📖 AI Latency benchmark results for the Router Dashboard's "Probe all"
+      // 📖 button. Mirrors the per-model fields already exposed on /api/models
+      // 📖 so the set list can show live AI latency + TPS after a probe.
+      isBenchmarking: this.webBenchmarkRunning?.has(candidate.key) || false,
+      benchmark: this.webBenchmarkResults?.get(candidate.key) || null,
     }))
   }
 
@@ -1369,6 +1374,11 @@ class RouterRuntime {
     const activeSet = this.getSet(router.activeSet)
     return {
       ok: true,
+      // 📖 `running` mirrors `ok` so every consumer (Router view reads `ok`,
+      // 📖 Playground reads `running`) agrees on daemon state. Without this,
+      // 📖 the Playground showed "router offline" even when the Router card
+      // 📖 said "Running" — both hit /api/router/status but read different fields.
+      running: true,
       pid: process.pid,
       port: this.port,
       enabled: router.enabled,
@@ -1414,6 +1424,14 @@ class RouterRuntime {
       // 📖 serve the next chat completion. Surfaced so dashboards can mark the
       // 📖 "next" model and label Primary vs Fallback semantics. See issue #120.
       routingOrder: this.getRoutingOrder(activeSet),
+      // 📖 Global AI Latency probe progress — powers the Router Dashboard's
+      // 📖 "Probe all" button progress bar. Per-model results live on each
+      // 📖 entry of `models` above (isBenchmarking / benchmark).
+      globalBenchmark: {
+        running: this.webGlobalBenchmarkRunning || false,
+        total: this.webGlobalBenchmarkTotal || 0,
+        completed: this.webGlobalBenchmarkCompleted || 0,
+      },
       requestLog: this.requestLog.slice(0, 20),
       circuitBreakers: Object.fromEntries([...this.circuit.entries()].map(([key, value]) => [key, {
         state: value.authError ? 'AUTH_ERROR' : value.stale ? 'STALE' : value.unsupported ? 'UNSUPPORTED' : value.state,
@@ -3478,7 +3496,12 @@ export async function runRouterDaemon() {
 export async function getRouterDaemonStatus() {
   const { defaultPort, maxPort } = getRouterPortRange()
   const ports = []
-  const recordedPort = readNumberFile(ROUTER_PORT_PATH)
+  // 📖 Use the dynamic path resolvers so dev checkouts (FCM_DEV=1) read the
+  // 📖 `-dev` port/pid files and discover the dev daemon. The static constants
+  // 📖 are frozen at module load and would always point at the production files.
+  const portPath = getRouterPortPath()
+  const pidPath = getRouterPidPath()
+  const recordedPort = readNumberFile(portPath)
   if (recordedPort) ports.push(recordedPort)
   for (let port = defaultPort; port <= maxPort; port += 1) {
     if (!ports.includes(port)) ports.push(port)
@@ -3491,7 +3514,7 @@ export async function getRouterDaemonStatus() {
       // 📖 Keep scanning the small discovery range.
     }
   }
-  const pid = readNumberFile(ROUTER_PID_PATH)
+  const pid = readNumberFile(pidPath)
   return {
     ok: false,
     running: false,

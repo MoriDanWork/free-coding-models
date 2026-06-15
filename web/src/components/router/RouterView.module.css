@@ -844,3 +844,284 @@
   flex-shrink: 0;
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   📖 Probe-all button + progress bar (AI Latency benchmarks on the set).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* 📖 Active state for the Probe button while benchmarks run. */
+.probeBtnActive {
+  border-color: var(--accent, #00c864);
+  color: var(--accent, #00c864);
+  cursor: progress;
+}
+
+/* 📖 Progress card shown below the set actions while probing. */
+.probeProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary, #14141f);
+  border: 1px solid rgba(0, 200, 100, 0.2);
+  border-radius: 6px;
+}
+
+.probeProgressLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--accent, #00c864);
+  font-weight: 600;
+}
+
+.probeProgressCount {
+  margin-left: auto;
+  color: var(--text-secondary, #aaa);
+  font-weight: 500;
+  font-family: 'SF Mono', monospace;
+}
+
+.probeProgressBar {
+  height: 4px;
+  background: var(--bg-primary, #0f0f17);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.probeProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent, #00c864), rgba(0, 200, 100, 0.6));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   📖 AI Latency cell in each set row — populated by Probe all.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.aiLatencyCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 78px;
+  font-size: 10px;
+  font-family: 'SF Mono', monospace;
+  justify-content: flex-end;
+}
+
+.aiLatencyMs {
+  font-weight: 700;
+  color: #b400ff;
+}
+
+.aiLatencyTps {
+  color: var(--text-muted, #888);
+  font-size: 9px;
+}
+
+.aiLatencySpin {
+  color: var(--accent, #00c864);
+  letter-spacing: 2px;
+  animation: probeSpin 0.8s steps(3, end) infinite;
+}
+
+@keyframes probeSpin {
+  0% { opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+.aiLatencyErr {
+  color: var(--error, #ff5a5a);
+  font-size: 10px;
+}
+
+.aiLatencyNone {
+  color: var(--text-muted, #888);
+  opacity: 0.4;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   📖 Mini Playground — live router test inside the Router view.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.miniPgHint {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted, #888);
+}
+
+.miniPgHint code {
+  color: var(--accent, #00c864);
+  font-family: 'SF Mono', monospace;
+}
+
+.miniPg {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-primary, #0f0f17);
+  border: 1px solid var(--border, #1e1e2e);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-behavior: smooth;
+}
+
+.miniPgEmpty {
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 11px;
+  padding: 18px 8px;
+}
+
+.miniPgMsg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 88%;
+}
+
+.miniPgUser {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.miniPgAssistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.miniPgBubble {
+  padding: 7px 11px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.miniPgUser .miniPgBubble {
+  background: rgba(0, 200, 100, 0.12);
+  border: 1px solid rgba(0, 200, 100, 0.2);
+  border-bottom-right-radius: 4px;
+}
+
+.miniPgAssistant .miniPgBubble {
+  background: var(--bg-secondary, #14141f);
+  border: 1px solid var(--border, #1e1e2e);
+  border-bottom-left-radius: 4px;
+}
+
+.miniPgTyping {
+  color: var(--accent, #00c864);
+  letter-spacing: 3px;
+  animation: probeSpin 0.9s steps(3, end) infinite;
+}
+
+.miniPgError {
+  display: block;
+  margin-top: 4px;
+  color: var(--error, #ff5a5a);
+  font-size: 11px;
+}
+
+.miniPgAborted {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  font-style: italic;
+}
+
+/* 📖 Target badge under each user bubble — shows the Primary model the
+   router will try first for this message (priority-first routing, #120).
+   If failover kicks in, the reply's .miniPgRouted badge shows a different
+   model, making the fallback chain visible at a glance. */
+.miniPgTarget {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  font-family: 'SF Mono', monospace;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.miniPgTarget svg {
+  color: var(--accent, #00c864);
+}
+
+/* 📖 Routed-via badge under each assistant reply — shows WHICH model the
+   priority-first router actually picked for this message (issue #120). */
+.miniPgRouted {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  font-family: 'SF Mono', monospace;
+  padding: 0 4px;
+}
+
+.miniPgRouted span {
+  color: var(--accent, #00c864);
+}
+
+.miniPgInputRow {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.miniPgInput {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-primary, #0f0f17);
+  border: 1px solid var(--border, #1e1e2e);
+  border-radius: 8px;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.miniPgInput:focus {
+  border-color: var(--accent, #00c864);
+}
+
+.miniPgInput::placeholder {
+  color: var(--text-muted, #888);
+}
+
+.miniPgSendBtn,
+.miniPgStopBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.miniPgSendBtn {
+  background: var(--accent, #00c864);
+  color: #000;
+}
+
+.miniPgSendBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.miniPgStopBtn {
+  background: var(--error, #ff5a5a);
+  color: #fff;
+}
