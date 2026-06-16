@@ -292,6 +292,7 @@ export const cloudflare = [
 // 📖 Env var: OVH_AI_ENDPOINTS_ACCESS_TOKEN
 export const ovhcloud = [
   ['Qwen3.5-397B-A17B',                         'Qwen3.5 397B MoE',    'S',  '-',     '262k'],
+  ['Qwen3.6-27B',                               'Qwen3.6 27B',         'A',  '-',     '262k'],
   ['Qwen3-Coder-30B-A3B-Instruct',             'Qwen3 Coder 30B MoE',  'A+', '55.0%', '256k'],
   ['gpt-oss-120b',                              'GPT OSS 120B',         'S',  '60.0%', '131k'],
   ['gpt-oss-20b',                               'GPT OSS 20B',          'A',  '42.0%', '131k'],
