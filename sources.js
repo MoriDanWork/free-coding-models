@@ -332,10 +332,12 @@ export const kilo = [
 // 📖 Free unauthenticated tier works with tight shared limits; optional free token at https://token.llm7.io
 // 📖 Pro-tagged models from /v1/models are intentionally excluded.
 export const llm7 = [
+  ['deepseek-v4-flash',                      'DeepSeek V4 Flash',   'S+', '-',     '128k'],
+  ['kimi-k2.6',                              'Kimi K2.6',           'S+', '-',     '256k'],
   ['qwen3-235b',                             'Qwen3 235B',          'S+', '70.0%', '240k'],
+  ['devstral-small-2:24b',                   'Devstral Small 2',    'A',  '-',     '128k'],
   ['mistral-small-3.2',                      'Mistral Small 3.2',   'B+', '34.0%', '128k'],
   ['codestral-latest',                       'Codestral Latest',    'B+', '34.0%', '32k'],
-  ['devstral-small-2:24b',                   'Devstral Small 2',    'A',  '-',     '128k'],
 ]
 
 // 📖 Routeway source - https://api.routeway.ai/v1/models
