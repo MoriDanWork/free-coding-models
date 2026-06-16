@@ -75,13 +75,6 @@ export const nvidiaNim = [
   ['meta/llama-3.2-11b-vision-instruct',           'Llama 3.2 11B Vision','B',  '28.0%', '128k'],
   // ── C tier — SWE-bench Verified <20% or lightweight edge models ──
   ['microsoft/phi-4-mini-instruct',                'Phi 4 Mini',          'C',  '14.0%', '128k'],
-  // Removed (2026-05-26): minimax-m2 (deprecated), qwen3-next-80b-a3b-thinking (deprecated),
-  // llama-3.1-nemotron-ultra-253b-v1 (404), llama-3.3-nemotron-super-49b-v1.5 (404),
-  // llama-3.3-70b-instruct (404), mixtral-8x22b-instruct-v0.1 (404),
-  // granite-34b-code-instruct (deprecated), llama-4-scout-17b-16e-instruct (deprecated, not in nvidiaNim),
-  // llama-3.1-8b-instruct (404) → replaced by llama-3.2-11b-vision-instruct
-  // Removed (2026-06-10): z-ai/glm5 (replaced by z-ai/glm-5.1)
-  // Removed (2026-06-16): qwen/qwen3-coder-480b-a35b-instruct (free endpoint no longer listed in live NIM /v1/models — fails to ping)
 ]
 
 // 📖 Groq source - https://console.groq.com
@@ -102,8 +95,6 @@ export const groq = [
 export const cerebras = [
   ['gpt-oss-120b',                         'GPT OSS 120B',       'S',  '60.0%', '131k'],
   ['zai-glm-4.7',                          'GLM 4.7',            'S+', '73.8%', '131k'],
-  // Removed (2026-05-26): qwen-3-235b-a22b-instruct-2507 (deprecated May 27, 2026)
-  // Removed (2026-05-26): llama3.1-8b (deprecated May 27, 2026)
 ]
 
 // 📖 SambaNova source - https://cloud.sambanova.ai
@@ -121,7 +112,6 @@ export const sambanova = [
   ['Meta-Llama-3.3-70B-Instruct',          'Llama 3.3 70B',      'A-', '39.5%', '128k'],
   // ── B+ tier ──
   ['gemma-3-12b-it',                        'Gemma 3 12B IT',     'B+', '46.0%', '128k'],
-  // Removed (2026-05-26): MiniMax-M2.5 (deprecated, replaced by MiniMax-M2.7)
   // Fix (2026-05-26): Llama-4-Maverick context 1M → 128k (SambaNova actual limit)
 ]
 
@@ -138,9 +128,7 @@ export const sambanova = [
 export const openrouter = [
   // ── S+ tier — live :free chat/coding models ──
   ['qwen/qwen3-coder:free',                     'Qwen3 Coder 480B',   'S+', '70.6%', '1M'],
-  // Removed (2026-05-31): minimax/minimax-m2.5:free (free tier removed from OpenRouter)
   ['z-ai/glm-4.5-air:free',                     'GLM 4.5 Air',        'S+', '72.0%', '131k'],
-  // Removed (2026-05-31): deepseek/deepseek-v4-flash:free (free tier removed from OpenRouter)
   ['poolside/laguna-m.1:free',                  'Poolside Laguna M.1', 'S+', '-',     '262k'],
   ['poolside/laguna-xs.2:free',                 'Poolside Laguna XS.2','S+', '-',     '131k'],
   ['moonshotai/kimi-k2.6:free',                 'Kimi K2.6',          'S+', '76.8%', '262k'],
@@ -165,20 +153,11 @@ export const openrouter = [
   ['meta-llama/llama-3.2-3b-instruct:free',     'Llama 3.2 3B',       'B',  '20.0%', '128k'],
   // ── B+ tier ──
   ['nvidia/nemotron-nano-9b-v2:free',           'Nemotron Nano 9B',   'B+', '18.0%', '128k'],
-  // Removed (2026-05-31): baidu/cobuddy:free (free tier removed from OpenRouter)
   // ── B tier ──
   ['openrouter/free',                           'OpenRouter Free',    'B',  '-',     '200k'],
   // ── C tier ──
   ['liquid/lfm-2.5-1.2b-instruct:free',         'LFM 2.5 1.2B',       'C',  '-',     '32k'],
   ['liquid/lfm-2.5-1.2b-thinking:free',         'LFM 2.5 Thinking',   'C',  '-',     '32k'],
-  // Removed (2026-05-26): tencent/hy3-preview:free (free tier removed)
-  // Removed (2026-05-26): inclusionai/ling-2.6-1t:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-3n-e2b-it:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-3-27b-it:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-3-12b-it:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-3n-e4b-it:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-3-4b-it:free (free tier removed)
-  // Removed (2026-05-26): google/gemma-4-31b-a4b-it:free (never existed — data error)
 ]
 
 // 📖 GitHub Models source - https://models.github.ai
@@ -208,14 +187,9 @@ export const githubModels = [
 export const mistral = [
   ['mistral-large-2512',        'Mistral Large 3',     'S+', '70.0%', '256k'],
   ['mistral-medium-3-5',        'Mistral Medium 3.5',  'S+', '77.6%', '256k'],
-  // ⚠️ DEPRECATED — retire Jul 31, 2026 → replacement mistral-medium-3-5 (already cataloged)
   ['devstral-2512',             'Devstral 2',          'S+', '72.2%', '256k'],
-  // ⚠️ DEPRECATED — retire Jul 31, 2026 → replacement mistral-medium-3-5 (already cataloged)
   ['magistral-medium-2509',     'Magistral Medium 1.2','A+', '52.0%', '128k'],
   ['mistral-small-2603',        'Mistral Small 4',     'A',  '48.0%', '256k'],
-  // Removed (2026-05-26): devstral-medium-latest (deprecated, replaced by devstral-2512)
-  // Removed (2026-05-26): devstral-small-latest (deprecated, replaced by devstral-2512)
-  // Removed (2026-05-26): magistral-small-latest (deprecated, replaced by mistral-small-2603)
 ]
 
 // 📖 Mistral Codestral source - https://codestral.mistral.ai
@@ -247,13 +221,9 @@ export const googleai = [
   ['gemini-3.1-pro-preview',                    'Gemini 3.1 Pro Preview',       'S+', '78.0%', '1M'],
   ['gemini-3-flash-preview',                    'Gemini 3 Flash Preview',       'S',  '65.0%', '1M'],
   ['gemini-3.1-flash-lite',                     'Gemini 3.1 Flash Lite',        'A+', '55.0%', '1M'],
-  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-pro',                            'Gemini 2.5 Pro',               'S+', '63.2%', '1M'],
-  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash',                          'Gemini 2.5 Flash',             'A+', '50.0%', '1M'],
-  // ⚠️ DEPRECATED — shutdown Oct 16, 2026
   ['gemini-2.5-flash-lite',                     'Gemini 2.5 Flash Lite',        'A',  '42.0%', '1M'],
-  // Removed (2026-05-26): gemini-3.1-flash-lite-preview (endpoint shutdown May 25, 2026 → replaced by gemini-3.1-flash-lite)
 ]
 
 // 📖 ZAI source - https://open.z.ai
@@ -284,7 +254,6 @@ export const qwen = [
   ['qwen3.5-flash',                           'Qwen3.5 Flash',     'A+', '55.0%', '1M'],
   ['qwen3-coder-flash',                       'Qwen3 Coder Flash', 'A+', '55.0%', '1M'],
   ['qwen3-32b',                               'Qwen3 32B',          'A+', '50.0%', '256k'],
-  // Removed (2026-05-26): qwen2.5-coder-32b-instruct (legacy, replaced by qwen3-coder-plus/flash)
   // Fix (2026-05-26): qwen3-max ctx 1M→256k, qwen3-coder-plus ctx 256k→1M, qwen3-coder-flash ctx 256k→1M, qwen3-32b ctx 128k→256k
   // Fix (2026-05-26): qwen3-235b-a22b-instruct ID → qwen3-235b-a22b
 ]
@@ -301,11 +270,9 @@ export const cloudflare = [
   ['@cf/zai-org/glm-4.7-flash',               'GLM-4.7-Flash',     'S',  '59.2%', '131k'],
   ['@cf/openai/gpt-oss-120b',                 'GPT OSS 120B',      'S',  '60.0%', '128k'],
   // ── A+ tier ──
-  // Removed (2026-05-31): @cf/qwen/qwq-32b (upstream deprecation — Groq removed qwen-qwq-32b July 2025)
   ['@cf/nvidia/nemotron-3-120b-a12b',         'Nemotron 3 Super',  'A+', '56.0%', '32k'],
   // ── A tier ──
   ['@cf/meta/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout',     'A',  '44.0%', '131k'],
-  // ⚠️ DEPRECATED upstream — still callable, marked Deprecated on the Cloudflare catalog
   ['@cf/mistralai/mistral-7b-instruct-v0.2',   'Mistral 7B v0.2',   'A',  '38.0%', '128k'],
   ['@cf/qwen/qwen3-30b-a3b-fp8',              'Qwen3 30B MoE',     'A',  '45.0%', '128k'],
   ['@cf/qwen/qwen2.5-coder-32b-instruct',     'Qwen2.5 Coder 32B', 'A',  '46.0%', '128k'],
@@ -317,11 +284,7 @@ export const cloudflare = [
 
   // ── B tier ──
   ['@cf/ibm/granite-4.0-h-micro',             'Granite 4.0 Micro', 'B+', '30.0%', '128k'],
-  // Removed (2026-05-26): @cf/google/gemma-4-31b-it (never existed on Cloudflare)
-  // Removed (2026-05-26): @cf/meta/llama-3.1-8b-instruct (deprecated May 30 + actual ctx = 8k, not 128k)
   // Fix (2026-05-26): @cf/moonshotai/kimi-k2.6 ctx 256k → 262k
-  // Removed (2026-06-16): @cf/meta/llama-3.2-90b-instruct, @cf/google/gemma-2-9b-it (404 — not real Cloudflare models)
-  // Removed (2026-06-16): @cf/anthropic/claude-3-5-sonnet, @cf/openai/gpt-4o-mini (404 — Cloudflare never hosted Claude/GPT-4o; phantom entries)
 ]
 
 // 📖 OVHcloud AI Endpoints - https://endpoints.ai.cloud.ovh.net
@@ -339,7 +302,6 @@ export const ovhcloud = [
   ['Mistral-7B-Instruct-v0.3',                  'Mistral 7B Instruct',  'B',  '25.0%', '127k'],
   ['Mistral-Nemo-Instruct-2407',                'Mistral Nemo',         'B+', '30.0%', '118k'],
   ['Qwen3.5-9B',                                'Qwen3.5 9B',           'B+', '30.0%', '262k'],
-  // Removed (2026-05-26): Llama-3.1-8B-Instruct (delisted from OVHcloud catalog)
   // Fix (2026-05-26): Qwen3.5-9B ctx 128k→262k, Mistral-Small ctx 131k→128k, Mistral-Nemo ctx 128k→118k, Mistral-7B ctx 32k→127k
 ]
 
@@ -356,13 +318,6 @@ export const opencodeZen = [
   ['mimo-v2.5-free',                   'MiMo-V2.5 Free',          'S+', '-',     '200k'],
   ['nemotron-3-super-free',            'Nemotron 3 Super Free',   'A+', '52.0%', '200k'],
   ['minimax-m3-free',                  'MiniMax M3 Free',         'S+', '59.0%', '1M'],
-  // Removed (2026-05-28): qwen3.6-plus-free (free promotion ended — now requires OpenCode Go)
-  // Removed (2026-05-28): minimax-m2.5-free (7-day launch promo expired — now paid)
-  // Removed (2026-05-28): gpt-5-nano (was never free — incorrectly cataloged as free, requires Zen PAYG)
-  // Removed (2026-05-26): hy3-preview-free (deleted from Zen)
-  // Removed (2026-05-26): ling-2.6-flash-free (deleted from Zen)
-  // Removed (2026-05-26): trinity-mini-free (deleted from Zen)
-  // Removed (2026-05-26): trinity-large-preview-free (deleted from Zen)
   // Fix (2026-05-26): nematron-3-super-free ctx 1M → 200k (Zen limits it)
   // Added (2026-06-01): minimax-m3-free — MiniMax M3, 1M context, MSA attention (SWE-Bench Pro 59.0%)
 ]
