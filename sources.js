@@ -207,6 +207,7 @@ export const scaleway = [
   ['qwen3-235b-a22b-instruct-2507',            'Qwen3 235B',         'S+', '70.0%', '250k'],
   ['gpt-oss-120b',                             'GPT OSS 120B',       'S',  '60.0%', '128k'],
   ['qwen3-coder-30b-a3b-instruct',             'Qwen3 Coder 30B',    'A+', '55.0%', '128k'],
+  ['qwen3.6-35b-a3b',                          'Qwen3.6 35B MoE',    'A+', '-',     '256k'],
   ['holo2-30b-a3b',                            'Holo2 30B',          'A+', '52.0%', '22k'],
   ['llama-3.3-70b-instruct',                   'Llama 3.3 70B',      'A-', '39.5%', '100k'],
   ['mistral-small-3.2-24b-instruct-2506',      'Mistral Small 3.2',  'B+', '30.0%', '128k'],
