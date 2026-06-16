@@ -106,13 +106,12 @@ export const sambanova = [
   // ── S tier ──
   ['DeepSeek-V3.1',                        'DeepSeek V3.1',      'S',  '62.0%', '128k'],
   ['DeepSeek-V3.2',                        'DeepSeek V3.2',      'S+', '70.0%', '32k'],
-  ['Llama-4-Maverick-17B-128E-Instruct',   'Llama 4 Maverick',   'S',  '62.0%', '128k'],
   ['gpt-oss-120b',                         'GPT OSS 120B',       'S',  '60.0%', '128k'],
+  // ── A tier ──
+  ['gemma-4-31B-it',                       'Gemma 4 31B',        'A',  '45.0%', '128k'],
   // ── A- tier ──
   ['Meta-Llama-3.3-70B-Instruct',          'Llama 3.3 70B',      'A-', '39.5%', '128k'],
   // ── B+ tier ──
-  ['gemma-3-12b-it',                        'Gemma 3 12B IT',     'B+', '46.0%', '128k'],
-  // Fix (2026-05-26): Llama-4-Maverick context 1M → 128k (SambaNova actual limit)
 ]
 
 // 📖 OpenRouter source - https://openrouter.ai

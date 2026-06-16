@@ -15,13 +15,11 @@
   margin: 0;
   flex: 1;
   min-height: 0;
-  /* 📖 The container itself no longer scrolls — it is the relative clip box
-     📖 that hosts BOTH the scrolling table (scrollInner) and the grid-beam
-     📖 canvas overlay as siblings. overflow:hidden keeps the canvas (which is
-     📖 position:absolute inset:0) neatly clipped to the table viewport.
-     📖 isolation:isolate creates a clean stacking context so the overlay
-     📖 (z-index 3) reliably layers above body cells but below the sticky
-     📖 header (z-index 10) and toolbar (z-index 11). */
+  /* 📖 The container itself doesn't scroll — it is the relative clip box
+     📖 hosting the scrolling table (.scrollInner). overflow:hidden keeps the
+     📖 sticky header + virtualized rows neatly clipped to the table viewport.
+     📖 isolation:isolate creates a clean stacking context so the sticky
+     📖 <thead> header (z-index 10) reliably layers above body cells. */
   overflow: hidden;
   position: relative;
   isolation: isolate;
@@ -29,8 +27,9 @@
   flex-direction: column;
 }
 
-/* 📖 The real scroll surface for the table. Moved out of .container so the
-   📖 grid-beam overlay can sit as a non-scrolling sibling above it. */
+/* 📖 The real scroll surface for the table. It is the scroll element for
+   📖 both the sticky <thead> header and the @tanstack/react-virtual row
+   📖 virtualizer (only ~23 of 189 rows live in the DOM at any time). */
 .scrollInner {
   flex: 1;
   min-height: 0;
