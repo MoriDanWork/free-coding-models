@@ -38,6 +38,7 @@ import { loadConfig, getApiKey, saveConfig, isProviderEnabled } from '../src/cor
 import { getProviderBillingNote, getProviderLabelWithBilling, PROVIDER_METADATA } from '../src/core/provider-metadata.js'
 import { ensureFavoritesConfig } from '../src/core/favorites.js'
 import { ping } from '../src/core/ping.js'
+import { runProviderKeyTest } from '../src/core/provider-key-tester.js'
 import { loadChangelog } from '../src/core/changelog-loader.js'
 import { checkForUpdateDetailed, checkForUpdate, runUpdate, fetchLastReleaseDate } from '../src/core/updater.js'
 import { syncShellEnv, ensureShellRcSource, removeShellEnv } from '../src/core/shell-env.js'
@@ -657,22 +658,26 @@ async function handleRequest(req, res) {
 
   // 📖 M2: /api/key/:provider/test — matched here (above the switch) so the
   // 📖 M2 path doesn't conflict with the single-segment key reveal below.
-  // 📖 Mirrors the TUI Settings `T` key behavior: parallel auth probe + chat
-  // 📖 ping through the existing ping() helper.
+  // 📖 Mirrors the TUI Settings `T` key behavior via the shared runProviderKeyTest()
+  // 📖 pipeline in src/core/provider-key-tester.js: fast parallel auth probe to
+  // 📖 /v1/account or /v1/models, then ping-based verification against real model
+  // 📖 IDs (discovered from the provider's /models endpoint + repo catalog) so we
+  // 📖 never send an empty model ID (which the provider rejects with HTTP 400).
   const keyTestMatch = url.pathname.match(/^\/api\/key\/([^/]+)\/test$/)
   if (keyTestMatch) {
     if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return }
     const providerKey = decodeURIComponent(keyTestMatch[1])
     if (!sources[providerKey]) { sendJson(res, 404, { error: 'Unknown provider' }); return }
     const apiKey = getApiKey(config, providerKey)
-    if (!apiKey) { sendJson(res, 200, { outcome: 'missing_key', detail: `${providerKey} has no saved API key.` }); return }
+    if (!apiKey) { sendJson(res, 200, { outcome: 'missing_key', detail: `${sources[providerKey].name || providerKey} has no saved API key.` }); return }
     try {
-      const result = await ping(apiKey, '', providerKey, sources[providerKey].url, { silent: true })
-      if (result?.code === 200 || result?.code === '200') { sendJson(res, 200, { outcome: 'ok', code: 200 }); return }
-      if (result?.code === 401 || result?.code === '401' || result?.code === 403 || result?.code === '403') {
-        sendJson(res, 200, { outcome: 'auth_error', code: result.code }); return
-      }
-      sendJson(res, 200, { outcome: 'fail', code: result?.code ?? 'ERR', detail: 'Probe did not return a 2xx' })
+      const result = await runProviderKeyTest(apiKey, providerKey, sources[providerKey])
+      sendJson(res, 200, {
+        outcome: result.outcome,
+        detail: result.detail,
+        attempts: result.attempts,
+        discoveryNote: result.discoveryNote,
+      })
     } catch (err) {
       sendJson(res, 200, { outcome: 'fail', detail: err.message || 'Probe failed' })
     }
