@@ -88,6 +88,7 @@ When new PRs are merged, add the contributor's GitHub handle to the footer in `b
 - @whit3rabbit
 - @PhucTruong-ctrl
 - @stgreenb
+- @MoriDanWork
 
 ## Testing the TUI with tmux
 

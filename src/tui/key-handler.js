@@ -3484,3 +3484,11 @@ export function createMouseEventHandler(ctx) {
     // 📖 Clicks outside any recognized zone are silently ignored.
   }
 }
+
+export {
+  buildProviderModelsUrl,
+  parseProviderModelIds,
+  listProviderTestModels,
+  classifyProviderTestOutcome,
+  buildProviderTestDetail,
+};
