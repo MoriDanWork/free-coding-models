@@ -1149,15 +1149,27 @@ class RouterRuntime {
       const hasData = stats.total > 0
       const latencyScore = stats.p95 === null ? 0.5 : Math.max(0, 1 - (stats.p95 / maxP95))
       const uptimeScore = stats.uptime === null ? 0.5 : stats.uptime
+      // 📖 priorityBonus - kept as a separate field for dashboards/legacy UIs
+      // 📖 that previously rendered a single composite "score". Priority is
+      // 📖 NOT folded into `score` anymore (issue #120): the routing comparator
+      // 📖 in getRoutingCandidates sorts by explicit priority authoritatively,
+      // 📖 so mixing priority into the score only confused tiebreakers.
       const priorityBonus = 1 - ((entry.priority - 1) / setSize)
+      // 📖 score - pure latency+uptime composite. Used only as the FINAL
+      // 📖 tiebreaker between candidates that share the same priority AND
+      // 📖 same circuit state (see getRoutingCandidates). A model with no
+      // 📖 probe data yet scores neutral (0.5) - we deliberately do NOT use
+      // 📖 priorityBonus as a cold-start fallback, because that would re-
+      // 📖 introduce the priority-in-score confusion this refactor removes.
       const score = hasData
-        ? (weights.latencyWeight * latencyScore) + (weights.uptimeWeight * uptimeScore) + (weights.priorityWeight * priorityBonus)
-        : priorityBonus
+        ? (weights.latencyWeight * latencyScore) + (weights.uptimeWeight * uptimeScore)
+        : 0.5
       const state = this.updateCircuitForCooldown(key) || {}
       return {
         ...entry,
         key,
         score,
+        priorityBonus,
         stats,
         circuit: state,
         catalog: this.modelCatalog.get(key) || null,
@@ -1193,12 +1205,24 @@ class RouterRuntime {
       if (!this.getApiKeyForProvider(candidate.provider)) return false
       return candidate.circuit?.state === 'CLOSED' || candidate.circuit?.state === 'HALF_OPEN'
     })
-    const closed = usable.filter((candidate) => candidate.circuit.state === 'CLOSED')
-    const halfOpen = usable.filter((candidate) => candidate.circuit.state === 'HALF_OPEN')
-    // 📖 Priority ascending (1 before 2); within the same priority, healthier
-    // 📖 score wins so cold-start ties resolve deterministically.
-    const byPriorityThenHealth = (a, b) => a.priority - b.priority || b.score - a.score
-    return [...closed.sort(byPriorityThenHealth), ...halfOpen.sort(byPriorityThenHealth)]
+    // 📖 New ordering: prioritize by explicit priority first, then by circuit state
+    // 📖 (CLOSED before HALF_OPEN), and finally by health score (higher is better).
+    // 📖 This ensures a higher‑priority model is never skipped just because it is
+    // 📖 in HALF_OPEN while a lower‑priority CLOSED model is available.
+    const stateOrder = { CLOSED: 0, HALF_OPEN: 1 }
+    const comparator = (a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority
+      const aState = a.circuit?.state || 'UNKNOWN'
+      const bState = b.circuit?.state || 'UNKNOWN'
+      if (aState !== bState) {
+        const aRank = stateOrder[aState] ?? 2
+        const bRank = stateOrder[bState] ?? 2
+        return aRank - bRank
+      }
+      // higher score first
+      return b.score - a.score
+    }
+    return usable.sort(comparator)
   }
 
   // 📖 getRoutingOrder - slim projection of getRoutingCandidates for the /stats
@@ -1738,27 +1762,48 @@ class RouterRuntime {
   }
 
   scheduleProbeLoop() {
+    // Clear any existing timers
     if (this.probeTimer) clearInterval(this.probeTimer)
+    if (this.probeWatchdog) clearInterval(this.probeWatchdog)
     for (const timeout of this.probeTimeouts) clearTimeout(timeout)
     this.probeTimeouts.clear()
+
     const router = this.routerConfig()
     const interval = router.probeIntervals[router.probeMode] || DEFAULT_ROUTER_SETTINGS.probeIntervals.balanced
+    // Track last successful probe cycle timestamp
+    this.lastProbeAt = Date.now()
+
     this.probeTimer = setInterval(() => {
-      const set = this.getSet()
-      if (!set || this.shuttingDown) return
-      const candidates = this.scoreCandidates(set)
-        .filter((candidate) => candidate.catalog?.routeable && !candidate.circuit?.stale)
-      const stagger = candidates.length > 0 ? Math.max(250, Math.floor(interval / candidates.length)) : interval
-      candidates.forEach((candidate, index) => {
-        const timeout = setTimeout(() => {
-          this.probeTimeouts.delete(timeout)
-          void this.probeCandidate(candidate, { eco: router.probeMode === 'eco' })
-        }, index * stagger)
-        timeout.unref?.()
-        this.probeTimeouts.add(timeout)
-      })
+      try {
+        const set = this.getSet()
+        if (!set || this.shuttingDown) return
+        const candidates = this.scoreCandidates(set)
+          .filter((candidate) => candidate.catalog?.routeable && !candidate.circuit?.stale)
+        const stagger = candidates.length > 0 ? Math.max(250, Math.floor(interval / candidates.length)) : interval
+        candidates.forEach((candidate, index) => {
+          const timeout = setTimeout(() => {
+            this.probeTimeouts.delete(timeout)
+            void this.probeCandidate(candidate, { eco: router.probeMode === 'eco' })
+          }, index * stagger)
+          timeout.unref?.()
+          this.probeTimeouts.add(timeout)
+        })
+        // Update timestamp after scheduling probes
+        this.lastProbeAt = Date.now()
+      } catch (err) {
+        this.logger.error('[ProbeLoop] error', { error: err })
+      }
     }, interval)
     this.probeTimer.unref?.()
+
+    // Watchdog: if no successful cycle for 3x interval, restart loop
+    this.probeWatchdog = setInterval(() => {
+      if (this.lastProbeAt && Date.now() - this.lastProbeAt > interval * 3) {
+        this.logger.warn('[ProbeLoop] stall detected, restarting probe loop')
+        this.scheduleProbeLoop()
+      }
+    }, interval)
+    this.probeWatchdog.unref?.()
   }
 
   async routeRequest({ req, res, body, setName, requestId }) {
@@ -2357,6 +2402,7 @@ class RouterRuntime {
       this.markSetCustomized()
       this.broadcast('set_change', { activeSet: this.routerConfig().activeSet, set: name, action: 'add', model: newEntry })
       sendJson(res, 201, { set: normalized.sets[name], router: normalized }, { 'x-request-id': requestId })
+      void this.runProbeBurst()
       return
     }
 
